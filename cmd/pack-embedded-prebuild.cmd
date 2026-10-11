@@ -80,6 +80,8 @@ copy /y "%ROOT%\resources\research\paper-map.js" "%STAGING%\paper-map.js" >nul |
 robocopy "%ROOT%\resources\markdown" "%STAGING%\markdown" /E /NFL /NDL /NJH /NJS /NP >nul
 if errorlevel 8 exit /b 1
 if not exist "%STAGING%\research\" mkdir "%STAGING%\research"
+robocopy "%ROOT%\research\grobid" "%STAGING%\research\grobid" /E /NFL /NDL /NJH /NJS /NP >nul
+if errorlevel 8 exit /b 1
 for %%F in (Install-Vietnamese-Voice.ps1 Speak-Vietnamese.ps1 THIRD-PARTY.txt SciHub-MIT-LICENSE.txt Anna-API-MIT-LICENSE.txt) do (
   copy /y "%ROOT%\research\%%F" "%STAGING%\research\%%F" >nul || exit /b 1
 )

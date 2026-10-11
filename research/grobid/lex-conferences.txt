@@ -1,0 +1,633 @@
+!aaai
+% conference
+#mas
+"ccv
+#l
+#m gis
+%international conference
+%multimedia conference
+%sigir
+(spatial
+&ymposium
+. on theory of computing
+$mm
+#ns
+"da europe
++ international conference on reliable software technologies
+#vanced research in vlsi
+"ied
+#ps
+#sb
+"lc
+#gorithmic number theory symposium
+*s and data structures symposium
+"mcis
+#ericas conference on information systems
+"nnual conference of the european association for computer graphics
+Cchapter of the association for computational linguistics
+:north american chapter of the association for computational linguistics
+:section of the royal academy
+3proceedings
++vention of the society for the study of artificial intelligence and simulation of behaviour
+(ieee communications society conference on sensor mesh and ad hoc communications and networks
+)nternational acm sigir conference
+6conference of the ieee
+6ieee embs
+6meeting
+)rb conference
+(lorne conference
+(meeting
+/ of the association for computational linguistics
+(symposium on computer architecture
+(technical conference
+"pplied cryptography and network security
+"ro msi
+#tificial intelligence planning systems
+#vlsi
+"se
+#ia and south pacific design automation conference
+%crypt
+%n conference on computer vision
+#p dac
+$los
+"tal
+"ustralian society
+!bmvc
+"oston university conference
+"ritish machine vision conference
+!caip
+$se
+#nadian conference on computational geometry
+#v
+"ccg
+#grid
+#s
+"go
+"hes
+#i
+"iaa
+#cling
+#dr
+#km
+"ocoon
+#ling
+$t
+#mputer aided verification
++nalysis of images and patterns
+*security foundations symposium
+?workshop
+#next
+$ference and north american chapter of the association
+-ssociation
+,of phd students
+-n advanced information systems engineering
+0rtificial intelligence
+0ssistive technologies
+0utomated deduction
+/computational learning theory
+5er and communications security
+8communications
+8supported cooperative work
+8vision and pattern recognition
+0urrent trends
+/embedded networked sensor systems
+/file and storage technologies
+0oundations
+/human computer interaction with mobile devices and services
+5factors in computing systems
+/information and knowledge management
+1novative data systems research
+1teger programming and combinatorial optimization
+/knowledge discovery and data mining
+/languages compilers and tools for embedded systems
+0earning theory
+0ocal computer networks
+/measurement and modeling of computer systems
+/neural information processing systems
+/object oriented programming systems languages and applications
+/parallel processing for scientific computing
+/supercomputing
+/uncertainty in artificial intelligence
+$gress of the european society
+1international society
+)us internationalis
+$sensus conference
+"ryptographic hardware and embedded systems
+"scl
+$w
+#f
+$w
+"vpr
+!dac
+#ta compression conference
+"cagrs
+#c
+#fs
+#oss
+"escriptional complexity of automata grammars and related structures
+$ign automation and test in europe
+3conference
+(science research in information systems and technology
+'ing interactive systems
+$rist
+"isc
+"lt
+"sn
+!eacl
+"cai
+#cv
+#is
+#ml
+#oop
+#p
+#rts
+"dbt
+"mnlp
+#soft
+"sa
+#ca workshop
+#op
+$rics
+"uro par conference
+%cg
+&olt
+&rypt
+%graphics
+- conference on graphics hardware
+%micro conference on real time systems
+%pean conference
+4 on computer systems
+Avision
+8information systems
+8machine learning
+H and principles and practice of knowledge discovery in databases
+8object oriented programming
+8parallel computing
+Aprocessing
+9lanning
+9rinciples and practice of knowledge discovery in databases
+8wireless sensor networks
+*symposium on algorithms
+7principles of data mining and knowledge discovery from databases
+9ogramming
+7research in computer security
+*working session on learning
+.shop on computational geometry
+6wireless sensor networks
+%sys
+"wsl
+$n
+!fall workshop on computational geometry
+#st software encryption workshop
+"ccm
+"dsr
+"ield programmable custom computing machines
+#nal program and abstracts
+"lops
+"me
+"ocs
+#ga
+#rmal descriptions and software reliability
+(methods europe
+#ssacs
+#undations of genetic algorithms
+0software science and computation structures
+"pga
+"se
+#ttcs
+!globecom
+"raphics interface
+!harvard school symposium
+"ipc
+#rosaki international forum
+#story of programming languages conference
+"opl
+#tmobile
+$nets
+$os
+"pca
+#dc
+!i3d
+$g
+"arcs conference on foundations of software technology and theoretical computer science
+"calp
+%t
+$ps
+#c
+$ad
+$cn
+$v
+#dcn
+%s
+$e
+$m
+$t
+#eccs
+#fp
+#gst international conference
+#ip
+$s
+#lp
+#mas
+$cs
+$e
+$l
+#np
+#pads
+$p
+$r
+#s
+$e
+$m
+$r
+"eee conference
+&global communications conference
+&int l conference
+,symposium
+)ernational conference
+&rfid
+&symposium
+/ on foundations of computer science
+3logic in computer science
+&trans processing
++actions
+"fip conference on human computer interaction
+&international conference on networking
+"jcai
+%r
+$bs
+"mc
+#r
+"ndocrypt
+#focom
+%rmation visualization conference
+%vis
+#tegrating technology into computer science education
+%rnational acm conference
+3sigaccess conference on computers and accessibility
+6ir conference
+/colloquium on automata languages and programming
+=structural information and communication complexity
+1mputing and combinatorics conference
+1nference
+9 on advanced learning technologies
+Ds in geographic information systems
+>pplications of natural language to information systems
+>rchitectural support for programming languages and operating systems
+?tificial intelligence in education
+>utomated planning and scheduling
+Greasoning with analytic tableaux and related methods
+Gsoftware engineering
+Anomous agents
+N and multiagent systems
+=cluster computing
+>ommunications
+@piler construction
+Es architecture and synthesis for embedded systems
+Autational linguistics
+Cer aided design
+Fcommunications and networks
+Fgraphics and interactive techniques
+Fsupported collaborative learning
+Fvision
+?ordination models and languages
+>ryptology in india
+=data engineering
+Bmining
+Abase theory
+>ependable systems and networks
+?sign of communication
+?velopments in language theory
+>istributed computing and networking
+Sin sensor systems
+Ssystems
+=embedded software
+?erging networking experiments and technologies
+>ngineering of complex computer systems
+>xtending database technology
+=formal description techniques
+Z for distributed systems and communication protocols
+Dtechniques for networked and distributed systems
+>unctional programming
+=grid computing
+=hardware software codesign
+>igh performance computing
+=image processing
+?plementation and application of automata
+>nformation processing in sensor networks
+Isystems
+?telligent systems for molecular biology
+Itext processing and computational linguistics
+Jutoring systems
+Iuser interfaces
+=logic for programming artificial intelligence and reasoning
+Cprogramming
+=machine learning
+>obile ad hoc and sensor systems 23
+End ubiquitous systems computing networking and services
+Dcomputing and networking
+Dsystems applications and services
+?del driven engineering languages and systems
+Bing analysis and simulation of wireless and mobile systems
+>ultiagent systems
+Bmedia
+G and expo
+Hcomputing and systems
+=network protocols
+=parallel and distributed systems
+Grchitectures and compilation techniques
+Fprocessing
+?ttern recognition
+>eer to peer computing
+?rvasive computing and communications
+>rinciples and practice of constraint programming
+Hof distributed systems
+=research and development in information retrieval
+Fin computational molecular biology
+?writing techniques and applications
+>fid
+=scientific and statistical database management
+>ecurity and cryptography
+>oftware engineering
+Fmaintenance
+Freuse
+=the principles of knowledge representation and reasoning
+Atheory and application of cryptology and information security
+Ws of cryptographic techniques
+Aunified modeling language
+@ory and applications of satisfiability testing
+>ools and algorithms for construction and analysis of systems
+=ubiquitous computing
+=very large data bases
+=wirtschaftsinformatik
+2gress
+7 proceedings
+0ryptology conference
+/ieee embs conference
+/joint conference
+? on automated reasoning
+?s on bioinformatics systems biology and intelligent computing
+/meshing roundtable
+0iddleware conference
+/parallel and distributed processing symposium
+8processing symposium
+/requirements engineering conference
+/society
+0ummer school
+0ymposium
+8 on a world of wireless mobile and multimedia networks
+=lgorithms and computation
+<circuits and systems
+=luster computing and the grid
+=ode generation and optimization
+>mputer architecture
+<distributed computing
+<formal methods
+=unctional and logic programming
+<graph drawing
+<high performance computer architecture
+Mdistributed computing
+<integrated network management
+<logic based program synthesis and transformation
+>w power electronics and design
+<mathematical foundations of computer science
+=icroarchitecture
+=obile ad hoc networking and computing
+>deling and optimization in mobile ad hoc and wireless networks
+Aling analysis and simulation of computer and telecommunication systems
+<physical design
+=ractical aspects of declarative languages
+<recent advances in intrusion detection
+>liable distributed systems
+<symbolic and algebraic computation
+>stems synthesis
+<wearable computers
+/workshop on cluster computing
+;descriptional complexity of formal systems
+;mobile computing systems and applications
+;network and operating systems support for digital audio and video
+;peer to peer systems
+<ractice and theory in public key cryptography
+;quality of service
+;software and compilers for embedded systems
+;the web and databases
+;wireless mobile multimedia
+/youth conference
+'et measurement conference
+"pco
+#dps
+#ps
+#sn
+#tps
+"saac
+#ca
+%s
+#lped
+#mb
+#pd
+#sac
+$s
+#wc
+"ticse
+"ui
+"wcc
+#qos
+!jicslp
+"oint conference
+1 of the society
+'international conference and symposium on logic programming
+!kdd
+"itasato university symposium
+!lcn
+#tes
+"ics
+"opstr
+"par
+"rec
+!mascots
+"eeting of the european orahs
+"fcs
+"obicom
+%hoc
+%lehci
+%quitous
+%sys
+#ntreal international symposium
+"sst
+#wim
+!naacl
+#sa conference publication
+#tional academy of the united states of america
+*conference
+4 of the american association for artificial intelligence
+"dss
+"etwork and distributed system security symposium
+"ips
+"ldb
+"ordic conference
+$th american conference
+#ssdav
+"sdi
+!oopsla
+"podis
+"sdi
+!pacific asia conference on information systems
+)conference
+)rim symposium on image and video technology
+)symposium on biocomputing
+%s
+$t
+#dl
+#m
+$i
+#ssive and active measurement conference
+"epm
+#rcom
+"kc
+#dd
+"ldi
+"odc
+$s
+#pl
+"popp
+#sc
+"re conference workshop
+#oc r soc lond a
+&spie
+%eedings from a conference
+-of international conference
+0joint conference
+0the conference
+4international conference
+4symposium
+"sb
+#ivt
+!real time and embedded technology and applications symposium
++systems symposium
+#comb
+"oyal society of london series b
+"sa conference
+"ta
+$s
+#ss
+"uleml
+' symposium
+!sat
+"c conference
+#a
+$ndinavian conference on image analysis
+.symposium and workshops on algorithm theory
+.workshop on algorithm theory
+#ia
+"dm
+"econ
+$rypt
+#nsys
+"hanghai international conference
+"i3d
+#gcomm
+( conference
+%se
+' annual conference on innovation and technology in computer science education
+$doc
+$graph
+) symposium on interactive 3d graphics and games
+$ir
+$kdd
+$metrics
++ conference
+%od conference
+(international conference on management of data
+$plan conference on programming language design and implementation
+)international conference
+)symposium on compiler construction
+?optimization
+6principles and practice of parallel programming
+$soft symposium on the foundations of software engineering
+#rocco
+"ociety international conference
+#sp
+#utheast conference
+&west symposium on image analysis and interpretation
+"paa
+#d
+$p
+#ecial conference
+#ie conference
+"rds
+"sd
+$bm
+#iai
+#td
+"tacs
+$tic analysis symposium
+%usseminar of the bmft program
+#oc
+#ructure in complexity theory conference
+"wat
+"ymposium on computational geometry
+4er animation
+.discrete algorithms
+.field programmable gate arrays
+.large spatial databases
+.massive storage systems and technologies
+.networked systems design and implementation
+.operating systems design and implementation
+@principles
+.parallel and distributed processing
+6ism in algorithms and architectures
+/rinciples of database systems
+=istributed computing
+<programming languages
+.reliability in distributed software and database systems
+.security and privacy
+/patial and temporal databases
+.theoretical aspects of computer science
+.user interface software and technology
+.visual languages and human centric computing
+!tacas
+"cc
+"echnical symposium on computer science education
+"heory of cryptography conference
+"ransactions of the royal society of london b
+!uai
+"bicomp
+"ist
+"nited nations conference
+"senix
+' security symposium
+!visualization conference
+"l hcc
+#db
+"ortrage und zusammenfassungen der nationalen fachtagung der sge
+!wabi
+#ds
+#fr
+#oa
+"dag
+"ebdb
+"i
+#a
+#opt
+"mcsa
+"ollic
+#rkshop of the national conference
++n agent theories architectures and languages
+.lgorithmic foundations of robotics
+6s and data structures
+8in bioinformatics
+.pproximation and online algorithms
+-computational geometry
+.ryptographic hardware and embedded systems
+-distributed algorithms on graphs
+-hot topics in networks
+;operating systems
+-implementation of automata
+-logic language information and computation
+-partial evaluation and semantic based program manipulation
+-static analysis
+*proceedings
+$ld congress
+'wide web conference
+#wmom
+"sa

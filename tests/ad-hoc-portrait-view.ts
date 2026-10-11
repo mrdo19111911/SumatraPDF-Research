@@ -99,7 +99,7 @@ async function check(
   writeFileSync(
     join(data, "SumatraPDF-settings.txt"),
     `ShowStartPage = false\nUseTabs = false\nShowMenubar = true\nCheckForUpdates = false\nDefaultDisplayMode = continuous\nDefaultZoom = fit page\n` +
-      `RememberStatePerDocument = true\nFileStates [\n [\n FilePath = ${pdf}\n UseDefaultState = false\n AutoContentReading = ${label === "menu-mode" || label === "normal-open" ? "false" : "true"}\n DisplayMode = continuous\n Zoom = fit page\n ]\n]\n`,
+      `RememberStatePerDocument = true\nFileStates [\n [\n FilePath = ${pdf}\n UseDefaultState = false\n AutoContentReading = ${label === "menu-mode" || label === "history-off" ? "false" : "true"}\n DisplayMode = continuous\n Zoom = fit page\n ]\n]\n`,
   );
   await withControlledSumatra(
     EXE,
@@ -109,9 +109,12 @@ async function check(
         const toolbar = String((await client.request(ControlCommand.TestToolbarButtons))[1]);
         if (!toolbar.includes(`cmd=${cmdId("CmdAutoContentReading")} hidden=0`))
           throw new Error("AUTO button missing from toolbar");
+        // AUTO-01: a newly opened PDF starts in AUTO even when its history says off.
+        checkReadingMenu(await waitForFrame(proc.pid!), true);
+        await clickAuto(client, await waitForFrame(proc.pid!));
         const before = await state(client);
-        if (before.mode !== "continuous" || before.zoom !== "fit page")
-          throw new Error("reading mode enabled without selecting it");
+        if (before.zoom !== "fit page") throw new Error("AUTO button did not turn reading mode off");
+        checkReadingMenu(await waitForFrame(proc.pid!), false);
         await clickAuto(client, await waitForFrame(proc.pid!));
       }
       let contentIdle = await client.waitForRenderIdle();
@@ -170,14 +173,15 @@ async function check(
         await waitForWindowIdle(frame);
         contentIdle = await client.waitForRenderIdle();
         const resized = await state(client);
-        if (resized.mode !== "facing" || resized.zoom !== opened.zoom || resized.real === opened.real) {
-          throw new Error(`wide window did not switch to Facing and recompute content fit: ${JSON.stringify(resized)}`);
+        // a one-page document never pairs pages; the wider window only refits content
+        if (resized.mode !== "single page" || resized.zoom !== opened.zoom || resized.real === opened.real) {
+          throw new Error(`wide window did not recompute content fit: ${JSON.stringify(resized)}`);
         }
         if (!moveWindow(frame, 0, 0, 420, 650)) throw new Error("could not restore portrait window");
         await waitForWindowIdle(frame);
         contentIdle = await client.waitForRenderIdle();
         opened = await state(client);
-        if (opened.mode !== "single page") throw new Error("portrait window kept Facing after resize");
+        if (opened.mode !== "single page") throw new Error("portrait window left Single Page after resize");
       }
       if (label === "next-page") {
         await invoke(client, "CmdGoToNextPage");
@@ -229,8 +233,8 @@ async function check(
         if ((await state(client)).mode !== "single page") throw new Error("disabled mode still auto-switches layout");
         await invoke(client, "CmdAutoContentReading");
         const enabled = await state(client);
-        if (enabled.mode !== "facing" || enabled.zoom !== "fit content height")
-          throw new Error("menu did not reactivate automatic content view");
+        if (enabled.mode !== "single page" || enabled.zoom !== "fit content height")
+          throw new Error(`menu did not reactivate automatic content view: ${JSON.stringify(enabled)}`);
       }
       console.log(`PASS ${label}: ${opened.mode}, ${opened.zoom}, zoom=${opened.real}%`);
     },
@@ -261,13 +265,14 @@ export async function testit(): Promise<void> {
   await check("header-sparse", 612, 792, ["70 200 470 250"], "420x650", "single page", 250);
   await check("both-sparse", 612, 792, ["70 200 470 250"], "420x650", "single page", 250);
   await check("footer-dense", 612, 792, ["70 200 470 250"], "420x650", "single page", 423);
-  await check("normal-open", 612, 792, ["70 200 470 250"], "420x650", "continuous");
+  await check("history-off", 612, 792, ["70 200 470 250"], "420x650", "single page", 250);
   await check("menu-mode", 612, 792, ["70 200 470 250"], "420x650", "single page", 250);
   await check("letter-tall", 612, 792, ["70 200 470 250"], "420x650", "single page", 250);
-  await check("letter-wide", 612, 792, ["70 100 470 400", "70 200 470 400"], "950x550", "facing", 400);
+  // AUTO-02: two 470pt-wide bodies do not fit side by side at content-height zoom
+  await check("letter-wide", 612, 792, ["70 100 470 400", "70 200 470 400"], "950x550", "single page", 400);
   await check("large-gutter", 612, 792, ["206 100 200 400", "206 200 200 400"], "950x550", "facing", 400);
   await check("unequal-heights", 612, 792, ["70 200 470 400", "70 100 470 600"], "950x550", "facing", 600);
-  await check("preserve-side-margins", 612, 792, ["206 100 200 600"], "950x550", "facing", 600);
+  await check("preserve-side-margins", 612, 792, ["206 100 200 600"], "950x550", "single page", 600);
   await check("a4-wide", 595, 842, ["60 200 475 500", "60 200 475 500"], "950x550", "facing", 500);
   await check("blank", 612, 792, [""], "420x650", "single page", 792);
   await check("next-page", 612, 792, ["70 200 100 250", "70 100 470 400"], "420x650", "single page", 250);

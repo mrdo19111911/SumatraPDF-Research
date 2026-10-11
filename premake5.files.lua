@@ -311,6 +311,8 @@ function sumatrapdf_files()
     "ResearchTools.*",
     "ResearchFetch.*",
     "PaperLibrary.*",
+    "CrfModel.*",
+    "Grobid*.*",
     "DriveClient.*",
     "AIAntiGravity.*",
     "AIClaudeCode.*",

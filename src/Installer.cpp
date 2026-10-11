@@ -1125,6 +1125,10 @@ static void CopySettingsFile() {
 
     // don't over-write
     bool failIfExists = true;
+    // Research releases up to 4.7.4 installed as "SumatraPDF"; keep their settings.
+    TempStr oldResearchPath = path::JoinTemp(dstDir, StrL("SumatraPDF"), prefsFileName);
+    dir::CreateAll(path::GetDirTemp(dstPath));
+    file::Copy(dstPath, oldResearchPath, failIfExists);
     // don't care if it fails or not
     file::Copy(dstPath, srcPath, failIfExists);
     logf("  copied '%s' to '%s'\n", srcPath, dstPath);

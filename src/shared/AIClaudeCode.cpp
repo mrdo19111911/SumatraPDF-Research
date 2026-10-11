@@ -318,7 +318,7 @@ struct ClaudeCodeProvider : AIChatProvider {
     }
 
     void ParseStreamLine(Str line, AIChatStreamCtx* ctx) override {
-        TempStr eventType = AIChatJsonStrTemp(line, StrL("type"));
+        TempStr eventType = AIChatJsonTopStrTemp(line, StrL("type"));
         if (len(eventType) == 0) {
             return;
         }
@@ -367,12 +367,17 @@ struct ClaudeCodeProvider : AIChatProvider {
             return;
         }
         if (str::Eq(eventType, StrL("result"))) {
-            TempStr sub = AIChatJsonStrTemp(line, StrL("subtype"));
+            TempStr sub = AIChatJsonTopStrTemp(line, StrL("subtype"));
             if (sub && str::Eq(sub, StrL("error"))) {
                 TempStr err = AIChatJsonStrTemp(line, StrL("error"));
                 if (err) {
                     AIChatPostUpdate(ctx, AIChatUpdateType::Error, err);
                 }
+            }
+            // a usage limit or API error still says "success" but sets is_error; "result" holds the message
+            if (AIChatJsonTopTrue(line, StrL("is_error"))) {
+                TempStr err = AIChatJsonTopStrTemp(line, StrL("result"));
+                AIChatPostUpdate(ctx, AIChatUpdateType::Error, len(err) ? err : StrL("Claude Code reported an error"));
             }
             // claude emits result before the process exits; don't wait for EOF
             if (sub &&

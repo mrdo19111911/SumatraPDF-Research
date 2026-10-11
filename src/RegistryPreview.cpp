@@ -166,7 +166,7 @@ bool IsPreviewInstalled() {
 
 // --- opt-in PdfPreview.dll file logging ---------------------------------------
 
-#define kRegKeySumatra "Software\\SumatraPDF"
+#define kRegKeySumatra "Software\\SumatraPDFResearch"
 #define kRegValLogPdfPreview "LogPdfPreview"
 
 bool IsPdfPreviewLoggingEnabled() {

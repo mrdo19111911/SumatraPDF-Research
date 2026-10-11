@@ -43,6 +43,7 @@
 #include "Theme.h"
 #include "DarkMode.h"
 #include "PaperLibrary.h"
+#include "Grobid.h"
 #include "ResearchTools.h"
 
 enum class ResearchTask {
@@ -60,6 +61,8 @@ struct ResearchJob {
     HANDLE cancel = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     Str input, output, cache, helper, ffmpeg, error;
     Str prompt, answer, image;
+    Str title; // Fetch: the downloaded paper's title, for its file name
+    Str form;  // Fetch: POST body of the first request, e.g. a Sci-Hub title search
     StrVec papers;
     StrVec pageTexts;
     Vec<int> docIds;
@@ -81,6 +84,8 @@ struct ResearchJob {
         str::Free(prompt);
         str::Free(answer);
         str::Free(image);
+        str::Free(title);
+        str::Free(form);
     }
 };
 static ResearchJob* gResearchJob = nullptr;
@@ -196,6 +201,8 @@ TempStr PaperPromptTemp(PaperAction action, Str selected, int page) {
             "Quotes must be unique enough to locate the passage, 8-400 characters. Preserve source spelling. "
             "Keep theorem assumptions in their labels or separate linked assumption nodes. "
             "Do not invent dependencies, claim proof verification, or claim novelty. Omit unsupported edges. "
+            "Use the STRUCTURE block before the pages to cover every section, numbered equation and figure, "
+            "and to name reference nodes by their parsed titles; quotes must still come from the page text. "
             "State incomplete coverage and pages without extractable text. Labels and coverage in Vietnamese.");
     }
     Str task;
@@ -256,7 +263,10 @@ TempStr PaperPromptTemp(PaperAction action, Str selected, int page) {
         "where D is the DOCUMENT id, P is its physical PDF page (not printed numbering), "
         "and the fragment is a URL-encoded SHORT EXACT quote. Omit the fragment for images. "
         "Never invent a quote, page number or reference. Mark inference, uncertainty, absent evidence "
-        "and pages with NO EXTRACTABLE TEXT. %s\nCurrent physical page: %d\nSelected source passage:\n%s",
+        "and pages with NO EXTRACTABLE TEXT. A STRUCTURE block before each DOCUMENT's pages lists its "
+        "sections, figures, equation labels and parsed references with physical pages: use it to find "
+        "passages and resolve citations like [12], but quote only the page text. "
+        "%s\nCurrent physical page: %d\nSelected source passage:\n%s",
         task, page, selected);
 }
 
@@ -270,6 +280,15 @@ static bool WritePaperSources(ResearchJob* job) {
             return false;
         }
         text.Append(fmt("\nDOCUMENT %d: %s\nPAGES: %d\n", job->docIds[i], job->papers[i], engine->PageCount()));
+
+        // GROBID's layout analysis gives the AI a map of the paper; quotes still come from page text
+        TempStr outline = GrobidOutlineTemp(job->papers[i]);
+        if (len(outline) > 0) {
+            text.Append(
+                fmt("\nSTRUCTURE OF DOCUMENT %d (machine layout analysis; may contain errors; P = physical "
+                    "page; navigation only, never cite it):\n%s",
+                    job->docIds[i], outline));
+        }
         for (int page = 1; page <= engine->PageCount(); page++) {
             if (WaitForSingleObject(job->cancel, 0) == WAIT_OBJECT_0) return false;
             Str content = engine->GetTextForPage(page);
@@ -357,8 +376,8 @@ static TempStr VoiceCacheTemp() {
 
 static TempStr ResearchHelperTemp(Str name) {
     TempStr helper = path::JoinTemp(GetSelfExeDirTemp(), path::JoinTemp(StrL("research"), name));
-    if (file::Exists(helper)) return helper;
-    // Development builds live two levels below the repository.
+    if (file::Exists(helper) || !gIsDebugBuild) return helper;
+    // Debug builds live two levels below the repository; release builds trust only the app dir.
     return path::JoinTemp(path::GetDirTemp(path::GetDirTemp(GetSelfExeDirTemp())),
                           path::JoinTemp(StrL("research"), name));
 }
@@ -476,7 +495,23 @@ static void ResearchFinished(ResearchJob* job) {
         delete job;
         return;
     }
-    if (win && win == job->window && WaitForSingleObject(job->cancel, 0) != WAIT_OBJECT_0) {
+    bool shown = win && win == job->window && WaitForSingleObject(job->cancel, 0) != WAIT_OBJECT_0;
+    if (job->task == ResearchTask::Fetch && !len(job->error)) {
+        // the PDF was fetched to a temp file; keep it under the paper's title where the user says
+        TempStr temp = str::DupTemp(job->output);
+        TempStr target = shown ? ResearchPick(job->owner, L"Save downloaded PDF", L"PDF\0*.pdf\0\0",
+                                              PaperFileNameTemp(job->title), true)
+                               : TempStr();
+        bool saved = len(target) && file::Copy(target, temp, false);
+        file::Delete(temp);
+        if (!saved) {
+            if (len(target)) MessageBoxW(job->owner, L"Cannot save the PDF there.", L"Research tools", MB_OK);
+            delete job;
+            return;
+        }
+        str::ReplaceWithCopy(&job->output, target);
+    }
+    if (shown) {
         if (len(job->error)) {
             MessageBoxW(job->owner, CWStrTemp(job->error), L"Research tools", MB_OK | MB_ICONINFORMATION);
         } else if (WaitForSingleObject(job->cancel, 0) != WAIT_OBJECT_0) {
@@ -542,7 +577,8 @@ static void ResearchWorker(ResearchJob* job) {
             ResearchRun(job, SpeechCommandTemp(job->helper, job->cache, job->input, job->output, job->ffmpeg));
             break;
         case ResearchTask::Fetch:
-            ResearchFetchPdf(job->input, job->output, job->error, job->cancel);
+            if (ResearchFetchPdf(job->input, job->output, job->error, job->cancel, job->form))
+                job->title = str::Dup(GrobidPaperTitleTemp(job->output));
             break;
         case ResearchTask::Assistant: {
             if (!WritePaperSources(job)) break;
@@ -569,7 +605,7 @@ static void ResearchWorker(ResearchJob* job) {
     uitask::Post(MkFunc0(ResearchFinished, job));
 }
 
-static void StartResearch(MainWindow* win, ResearchTask task, Str input = {}, Str output = {}) {
+static void StartResearch(MainWindow* win, ResearchTask task, Str input = {}, Str output = {}, Str form = {}) {
     if (gResearchJob) return;
     auto* job = new ResearchJob();
     job->owner = win->hwndFrame;
@@ -577,6 +613,7 @@ static void StartResearch(MainWindow* win, ResearchTask task, Str input = {}, St
     job->task = task;
     job->input = str::Dup(input);
     job->output = str::Dup(output);
+    job->form = str::Dup(form);
     job->cache = str::Dup(VoiceCacheTemp());
     job->helper = str::Dup(ResearchHelperTemp(task == ResearchTask::InstallVoice ? StrL("Install-Vietnamese-Voice.ps1")
                                                                                  : StrL("Speak-Vietnamese.ps1")));
@@ -612,7 +649,7 @@ void OnResearchTools(MainWindow* win, ResearchAction action) {
         {103, L"Export Vietnamese MP3\nChoose reviewed narration text; speech runs on this computer."},
         {104, L"Install Vietnamese voice\nDownload the local voice once (about 50 MB download)."},
         {105, L"Connected Papers\nOpen the embedded research browser."},
-        {106, L"Sci-Hub\nLook up DOI/PMID/URL in the embedded browser."},
+        {106, L"Sci-Hub\nLook up DOI/PMID/URL or paper title in the embedded browser."},
         {107, L"Locate FFmpeg\nSelect the local MP3 encoder if it is not in PATH."},
     };
     HWND owner = win->hwndFrame;
@@ -1321,13 +1358,32 @@ static TempStr ResearchArxivId(Str text) {
     return str::DupTemp(id);
 }
 
-static TempStr ResearchQuery(WindowTab* tab) {
-    EngineBase* engine = tab ? tab->GetEngine() : nullptr;
-    if (engine) {
-        TempStr title = engine->GetPropertyTemp(DocProp::Title);
-        if (len(title)) return title;
+// Title metadata is often a file or TeX image name ("images/flow.eps", "Microsoft Word - x.docx")
+static bool UsableTitle(Str title) {
+    if (len(title) < 8 || str::IndexOfChar(title, ' ') < 0) return false;
+    if (str::IndexOfChar(title, '/') >= 0 || str::IndexOfChar(title, '\\') >= 0) return false;
+    if (str::StartsWithI(title, StrL("Microsoft "))) return false;
+    for (Str ext : {StrL(".pdf"), StrL(".dvi"), StrL(".tex"), StrL(".doc"), StrL(".eps"), StrL(".ps")}) {
+        if (str::ContainsI(title, ext)) return false;
     }
-    return tab ? path::GetBaseNameTemp(tab->filePath) : TempStr();
+    return true;
+}
+
+static TempStr ResearchQuery(WindowTab* tab) {
+    if (!tab) return {};
+    EngineBase* engine = tab->GetEngine();
+    TempStr title = engine ? engine->GetPropertyTemp(DocProp::Title) : TempStr();
+    if (UsableTitle(title)) return title;
+
+    // GROBID reads the whole PDF; remember the last answer for repeated searches
+    static Str lastPath;
+    static Str lastTitle;
+    if (!str::Eq(tab->filePath, lastPath)) {
+        str::ReplaceWithCopy(&lastPath, tab->filePath);
+        str::ReplaceWithCopy(&lastTitle, GrobidPaperTitleTemp(tab->filePath));
+    }
+    if (len(lastTitle)) return str::DupTemp(lastTitle);
+    return path::GetBaseNameTemp(tab->filePath);
 }
 
 static TempStr ResearchDoiText(Str text) {
@@ -1346,7 +1402,7 @@ static TempStr ResearchDoiText(Str text) {
 
 static TempStr ResearchDoiTemp(WindowTab* tab) {
     EngineBase* engine = tab ? tab->GetEngine() : nullptr;
-    if (!engine || !engine->TryGetTextForPage(1)) return {};
+    if (!engine) return {};
     return ResearchDoiText(engine->GetTextForPage(1));
 }
 
@@ -1363,8 +1419,9 @@ static TempStr ConnectedPaperQuery(WindowTab* tab) {
     if (!tab) return {};
     TempStr id = ResearchArxivId(path::GetBaseNameTemp(tab->filePath));
     if (len(id)) return fmt("https://arxiv.org/abs/%s", id);
+    // blocking read: a busy text cache must not switch the answer between arXiv and title
     EngineBase* engine = tab->GetEngine();
-    if (engine && engine->TryGetTextForPage(1)) {
+    if (engine) {
         id = ResearchArxivId(engine->GetTextForPage(1));
         if (len(id)) return fmt("https://arxiv.org/abs/%s", id);
         TempStr doi = ResearchDoiTemp(tab);
@@ -1384,12 +1441,28 @@ static TempStr ResearchBrowserUrl(ResearchBrowser* browser) {
     if (browser->service == 0) return ConnectedPaperUrl(query);
     TempStr base = ToUtf8Temp(HwndGetTextWTemp(browser->endpoint));
     if (!ResearchUrlAllowed(base)) return {};
-    return fmt("%s%s%s", base, str::EndsWith(base, StrL("/")) ? StrL("") : StrL("/"), URLEncodeMayTruncateTemp(query));
+    return SciHubUrlTemp(base, query);
+}
+
+static TempStr SciHubTitleTemp(ResearchBrowser* browser) {
+    TempStr query = ToUtf8Temp(HwndGetTextWTemp(browser->input));
+    return browser->service == 1 && SciHubIsTitle(query) ? query : TempStr();
 }
 
 static void ResearchNavigate(ResearchBrowser* browser, Str url) {
     str::ReplaceWithCopy(&browser->url, url);
     browser->web->Navigate(url);
+}
+
+// Sci-Hub opens identifiers by URL; a title goes through its search form, which POSTs it
+static void ResearchSearch(ResearchBrowser* browser, Str url) {
+    TempStr title = SciHubTitleTemp(browser);
+    if (!len(title)) {
+        ResearchNavigate(browser, url);
+        return;
+    }
+    str::ReplaceWithCopy(&browser->url, url);
+    browser->web->SetHtml(SciHubFormPageTemp(url, title));
 }
 
 static LRESULT CALLBACK ResearchBrowserProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR data) {
@@ -1428,18 +1501,24 @@ static LRESULT CALLBACK ResearchBrowserProc(HWND hwnd, UINT msg, WPARAM wp, LPAR
                                          ToUtf8Temp(HwndGetTextWTemp(browser->endpoint)));
                     ScheduleSaveSettings();
                 }
-                ResearchNavigate(browser, url);
+                ResearchSearch(browser, url);
             } else
                 MessageBoxW(hwnd, L"Enter a valid HTTPS Sci-Hub endpoint.", L"Research tools", MB_OK);
         } else if (command == 102) {
             TempStr url = ResearchBrowserUrl(browser);
-            if (len(url)) LaunchBrowser(url);
+            TempStr title = SciHubTitleTemp(browser);
+            TempStr page = path::JoinTemp(GetTempDirTemp(), StrL("SumatraPDF-scihub.html"));
+            if (len(url) && len(title)) {
+                if (file::WriteFile(page, SciHubFormPageTemp(url, title))) LaunchBrowser(page);
+            } else if (len(url))
+                LaunchBrowser(url);
         } else if (command == 103 && browser->service == 1 && !gResearchJob &&
                    FindMainWindowByHwnd(browser->ownerHwnd) == browser->owner) {
-            TempStr output =
-                ResearchPick(hwnd, L"Save downloaded PDF (new filename)", L"PDF\0*.pdf\0\0", StrL("paper.pdf"), true);
+            // download to a temp file first, so the save dialog can propose the paper's title
+            TempStr output = MakeUniqueFilePathTemp(path::JoinTemp(GetTempDirTemp(), StrL("SumatraPDF-paper.pdf")));
             TempStr url = ResearchBrowserUrl(browser);
-            if (len(output) && len(url)) StartResearch(browser->owner, ResearchTask::Fetch, url, output);
+            TempStr form = SciHubFormTemp(SciHubTitleTemp(browser));
+            if (len(url)) StartResearch(browser->owner, ResearchTask::Fetch, url, output, form);
         }
     } else if (msg == WM_NCDESTROY) {
         KillTimer(hwnd, kResearchSizeTimer);
@@ -1452,7 +1531,8 @@ static LRESULT CALLBACK ResearchBrowserProc(HWND hwnd, UINT msg, WPARAM wp, LPAR
     return DefSubclassProc(hwnd, msg, wp, lp);
 }
 
-static void OpenResearchBrowserAt(MainWindow* win, int service, Str initialUrl) {
+// Sci-Hub (service 1) starts with `query` at `endpoint` when given, else the paper's DOI at the saved endpoint
+static void OpenResearchBrowserAt(MainWindow* win, int service, Str initialUrl, Str query = {}, Str endpoint = {}) {
     if (!HasWebView()) {
         LaunchBrowser(service ? gSettings->researchSciHubUrl
                               : ConnectedPaperUrl(ConnectedPaperQuery(win->CurrentTab())));
@@ -1472,9 +1552,12 @@ static void OpenResearchBrowserAt(MainWindow* win, int service, Str initialUrl) 
     }
     browser->input = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDIT, L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 8, 4, 800,
                                      24, browser->hwnd, nullptr, nullptr, nullptr);
-    HwndSetText(browser->input, service ? ResearchDoiTemp(win->CurrentTab()) : ConnectedPaperQuery(win->CurrentTab()));
-    SendMessageW(browser->input, EM_SETCUEBANNER, TRUE,
-                 (LPARAM)(service ? L"DOI / PMID / publisher URL" : L"Paper title / DOI / arXiv identifier"));
+    HwndSetText(browser->input, len(query) ? query
+                                : service  ? ResearchDoiTemp(win->CurrentTab())
+                                           : ConnectedPaperQuery(win->CurrentTab()));
+    SendMessageW(
+        browser->input, EM_SETCUEBANNER, TRUE,
+        (LPARAM)(service ? L"DOI / PMID / publisher URL / paper title" : L"Paper title / DOI / arXiv identifier"));
     browser->search = CreateWindowExW(0, WC_BUTTON, L"Search", WS_CHILD | WS_VISIBLE, 820, 4, 72, 24, browser->hwnd,
                                       (HMENU)101, nullptr, nullptr);
     browser->external = CreateWindowExW(0, WC_BUTTON, L"Browser", WS_CHILD | WS_VISIBLE, 900, 4, 72, 24, browser->hwnd,
@@ -1486,7 +1569,7 @@ static void OpenResearchBrowserAt(MainWindow* win, int service, Str initialUrl) 
                                         (HMENU)103, nullptr, nullptr);
         browser->endpoint = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDIT, L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 8,
                                             34, 1064, 24, browser->hwnd, nullptr, nullptr, nullptr);
-        HwndSetText(browser->endpoint, gSettings->researchSciHubUrl);
+        HwndSetText(browser->endpoint, len(endpoint) ? endpoint : gSettings->researchSciHubUrl);
     }
     SetWindowSubclass(browser->hwnd, ResearchBrowserProc, 1, (DWORD_PTR)browser);
     browser->web = new WebviewWnd();
@@ -1505,11 +1588,14 @@ static void OpenResearchBrowserAt(MainWindow* win, int service, Str initialUrl) 
     Str url = len(initialUrl) ? initialUrl
               : service       ? ResearchBrowserUrl(browser)
                               : ConnectedPaperUrl(ConnectedPaperQuery(win->CurrentTab()));
-    if (ResearchUrlAllowed(url))
+    if (ResearchUrlAllowed(url) && len(initialUrl))
         ResearchNavigate(browser, url);
+    else if (ResearchUrlAllowed(url))
+        ResearchSearch(browser, url);
     else
-        browser->web->SetHtml(StrL(
-            "<p>Enter a Sci-Hub HTTPS endpoint above, then enter a DOI, PMID or publisher URL and press Search.</p>"));
+        browser->web->SetHtml(
+            StrL("<p>Enter a Sci-Hub HTTPS endpoint above, then enter a DOI, PMID, publisher URL or paper title and "
+                 "press Search.</p>"));
     ShowWindow(browser->hwnd, SW_SHOW);
     if (gForTesting) gTestResearchBrowser = browser;
     SendMessageW(browser->hwnd, WM_SIZE, 0, 0);
@@ -1519,9 +1605,17 @@ void OpenResearchBrowser(MainWindow* win, int service) {
     OpenResearchBrowserAt(win, service, {});
 }
 
+void OpenSciHubBrowser(MainWindow* win, Str endpoint, Str query) {
+    OpenResearchBrowserAt(win, 1, {}, query, endpoint);
+}
+
 TempStr TestResearchToolsTemp(MainWindow* win, Str action, Str a, Str b, Str c, int* code) {
     *code = 1;
     if (!gForTesting) return str::DupTemp(StrL("testing only"));
+    if (str::Eq(action, StrL("paper-filename"))) {
+        *code = 0;
+        return PaperFileNameTemp(a);
+    }
     if (str::Eq(action, StrL("browser-url"))) {
         *code = 0;
         return ConnectedPaperUrl(len(a) ? a : ConnectedPaperQuery(win->CurrentTab()));
@@ -1545,6 +1639,7 @@ TempStr TestResearchToolsTemp(MainWindow* win, Str action, Str a, Str b, Str c, 
         return str::DupTemp(StrL("queued"));
     }
     if (str::StartsWith(action, StrL("library-"))) return TestPaperLibraryTemp(win, action, a, b, c, code);
+    if (str::StartsWith(action, StrL("grobid-"))) return TestGrobidTemp(action, a, b, code);
     if (str::StartsWith(action, StrL("map-"))) {
         PaperReport* report = nullptr;
         for (auto* candidate : gPaperReports)
@@ -1676,6 +1771,25 @@ TempStr TestResearchToolsTemp(MainWindow* win, Str action, Str a, Str b, Str c, 
         if (gResearchJob) SetEvent(gResearchJob->cancel);
         *code = 0;
         return str::DupTemp(StrL("cancelled"));
+    }
+    if (str::Eq(action, StrL("scihub-url"))) {
+        TempStr form = SciHubFormTemp(b);
+        *code = 0;
+        if (len(form)) return fmt("POST %s %s", SciHubUrlTemp(a, b), form);
+        return fmt("GET %s", SciHubUrlTemp(a, b));
+    }
+    if (str::Eq(action, StrL("scihub-fetch"))) {
+        Str error;
+        bool ok = ResearchFetchPdf(SciHubUrlTemp(a, b), c, error, nullptr, SciHubFormTemp(b));
+        *code = ok ? 0 : 1;
+        TempStr result = str::DupTemp(error);
+        str::Free(error);
+        return result;
+    }
+    if (str::Eq(action, StrL("scihub-browse"))) {
+        OpenSciHubBrowser(win, gSettings->researchSciHubUrl, a);
+        *code = gTestResearchBrowser ? 0 : 1;
+        return str::DupTemp(StrL("opened"));
     }
     if (str::Eq(action, StrL("resolve"))) {
         TempStr url = ResearchPdfUrlTemp(a, b);

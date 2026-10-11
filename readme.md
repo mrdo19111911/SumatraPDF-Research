@@ -5,7 +5,7 @@ This is an independent fork; custom release numbers are not upstream SumatraPDF 
 
 [Download Windows x64](https://github.com/mrdo19111911/SumatraPDF-Research/releases/latest)
 
-Choose `-install.exe` for the Windows installer or `.zip` for portable use. Close the running reader before upgrading. The installer retains upstream SumatraPDF's installation identity; choose a separate directory if you also use the original reader. The installer is unsigned.
+Choose `-install.exe` for the Windows installer or `.zip` for portable use. Close the running reader before upgrading. The installer registers as `SumatraPDFResearch` (own install directory, settings, file associations and Explorer preview/search handlers), so it can coexist with upstream SumatraPDF. Releases up to v4.7.4 installed under upstream's identity; uninstall those first. The installer is unsigned.
 
 ## Read and explore
 
@@ -14,7 +14,8 @@ Choose `-install.exe` for the Windows installer or `.zip` for portable use. Clos
 - Chat state and KG are separate for each document tab. AI actions share a toolbar group.
 - Research tools explain selections, build symbol indexes, compare papers or versions, and discuss figures with page references.
 - Dark theme, adaptive top/right toolbar, an embedded research browser and expanded Markdown rendering.
-- Reference collection searches arXiv and other configured sources and produces an HTML report of attempts and failures.
+- Native port of GROBID's CRF models (no Java, no server) reads each paper's title, authors, sections, figures, equations and references. KG and Ask receive this outline next to the page text; Connected Papers searches use the parsed title when the PDF metadata is unusable.
+- Reference collection splits the bibliography with GROBID, searches arXiv, Crossref, Sci-Hub (DOI, or the title when there is no DOI) and Google, names files after the paper title and produces an HTML report of attempts and failures.
 - Vietnamese narration can use locally downloaded speech tools. Drive and Zalo integrations need the user's own setup.
 
 ## Limits

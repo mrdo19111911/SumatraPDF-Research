@@ -24,6 +24,9 @@
 #include "SumatraConfig.h"
 #include "SimpleBrowserWindow.h"
 #include "ResearchFetch.h"
+#include "ResearchTools.h"
+#include "Grobid.h"
+#include "GrobidReferences.h"
 #include "PaperLibrary.h"
 
 constexpr int kReferenceLimit = 2000;
@@ -420,10 +423,11 @@ static bool ReferenceStart(Str line, int& prefix) {
     return false;
 }
 
-static void AddReference(Vec<PaperRef*>& rows, Str raw) {
+static void AddReference(Vec<PaperRef*>& rows, Str raw, Str knownTitle = {}) {
     raw = TrimLibrary(raw);
     if (len(raw) < 5 || len(rows) >= kReferenceLimit) return;
-    TempStr doi = FindDoi(raw), id = FindArxiv(raw), title = GuessPaperTitle(raw);
+    TempStr doi = FindDoi(raw), id = FindArxiv(raw);
+    TempStr title = len(knownTitle) ? str::DupTemp(knownTitle) : GuessPaperTitle(raw);
     TempStr key = NormalizePaper(raw);
     for (PaperRef* row : rows) {
         if (len(doi) && len(row->doi) && str::EqI(doi, row->doi)) return;
@@ -450,6 +454,272 @@ static bool HasRefDate(Str text) {
         if (i + 4 == len(text) || !isdigit((u8)text.s[i + 4])) return true;
     }
     return false;
+}
+
+//--- author-year bibliographies: "Betancourt, M. ... 2015." or "Ralph Abraham and Jerrold E. Marsden. ..."
+
+static bool NameCapital(u8 ch) {
+    return (ch >= 'A' && ch <= 'Z') || ch >= 0xC0;
+}
+
+static bool NameStop(u8 ch) {
+    return isdigit(ch) || strchr(" ,.;:()[]&", ch);
+}
+
+// "M.", "S.-i.", "J.-P.", "Th."
+static bool NameInitial(Str t) {
+    int i = 0;
+    while (i < len(t)) {
+        if (i && t.s[i] == '-') i++;
+        if (i >= len(t) || !isalpha((u8)t.s[i])) return false;
+        i++;
+        if (i < len(t) && islower((u8)t.s[i])) i++;
+        if (i >= len(t) || t.s[i] != '.') return false;
+        i++;
+    }
+    return len(t) > 0 && NameCapital((u8)t.s[0]);
+}
+
+static bool NameWord(Str t) {
+    if (!len(t) || !NameCapital((u8)t.s[0])) return false;
+    for (int i = 1; i < len(t); i++) {
+        if (NameStop((u8)t.s[i]) && t.s[i] != '.') return false;
+    }
+    return true;
+}
+
+static bool NameParticle(Str t) {
+    const Str particles[] = {StrL("de"),  StrL("van"), StrL("von"), StrL("der"), StrL("den"), StrL("da"),
+                             StrL("di"),  StrL("du"),  StrL("del"), StrL("le"),  StrL("la"),  StrL("dos"),
+                             StrL("ter"), StrL("et"),  StrL("al"),  StrL("al."), StrL("y")};
+    for (Str p : particles) {
+        if (str::Eq(t, p)) return true;
+    }
+    return false;
+}
+
+// Length of the leading author list: up to "(2013a)", a bare year, a quoted title or a period after a full word.
+static int AuthorBlockLen(Str s) {
+    for (int i = 0; i < len(s); i++) {
+        u8 ch = (u8)s.s[i];
+        bool quote = ch == '"' || (ch == 0xE2 && str::StartsWith(Str(s.s + i, len(s) - i), StrL("\xE2\x80")));
+        bool year = isdigit(ch) || (ch == '(' && i + 1 < len(s) && isdigit((u8)s.s[i + 1]));
+        if (i && s.s[i - 1] == ' ' && (year || quote)) return i - 1;
+        if (ch == ':') return i;
+        if (ch != '.') continue;
+        int start = i;
+        while (start > 0 && s.s[start - 1] != ' ') start--;
+        if (!NameInitial(Str(s.s + start, i + 1 - start))) return i;
+    }
+    return len(s);
+}
+
+// "Betancourt, M. and Rodrigues, P. R." / "Ralph Abraham and Jerrold E. Marsden": names only, no digits.
+static bool AuthorNames(Str block) {
+    if (!len(block) || len(block) > 160) return false;
+    int capitals = 0, words = 0;
+    StrVec tokens;
+    Split(&tokens, block, StrL(" "));
+    for (Str t : tokens) {
+        bool separator = len(t) && (t.s[len(t) - 1] == ',' || t.s[len(t) - 1] == ';');
+        while (len(t) && (t.s[len(t) - 1] == ',' || t.s[len(t) - 1] == ';')) t.len--;
+        if (!len(t) || str::Eq(t, StrL("and")) || str::Eq(t, StrL("&"))) {
+            words = 0;
+            continue;
+        }
+        if (++words > 5) return false;
+        if (!NameParticle(t) && !NameInitial(t)) {
+            if (!NameWord(t)) return false;
+            capitals++;
+        }
+        if (separator) words = 0;
+    }
+    return capitals > 0;
+}
+
+// "Betancourt, M." / "de Le´on, M." / "AKHMATSKAYA, E. & REICH, S."
+static bool CommaAuthorStart(Str s) {
+    int i = 0;
+    while (true) {
+        int end = i;
+        while (end < len(s) && s.s[end] != ' ') end++;
+        if (!NameParticle(Str(s.s + i, end - i))) break;
+        i = end + 1;
+    }
+    if (i >= len(s) || !NameCapital((u8)s.s[i])) return false;
+    int words = 0;
+    while (i < len(s) && s.s[i] != ',') {
+        if (s.s[i] == ' ' || s.s[i] == '-') {
+            if (++words > 1 || i + 1 >= len(s) || !NameCapital((u8)s.s[i + 1])) return false;
+        } else if (NameStop((u8)s.s[i])) {
+            return false;
+        }
+        i++;
+    }
+    if (i + 2 >= len(s) || s.s[i + 1] != ' ') return false;
+    int end = i + 2;
+    while (end < len(s) && !strchr(" ,;", s.s[end])) end++;
+    return NameInitial(Str(s.s + i + 2, end - i - 2));
+}
+
+// Offset past "Su, W., Boyd, S., and Candes, E. J." and a following "(2013a)." or "2002."; 0 when absent.
+static int CommaAuthorsEnd(Str s) {
+    int i = 0;
+    while (i < len(s)) {
+        Str rest = Str(s.s + i, len(s) - i);
+        if (str::StartsWith(rest, StrL("and ")) || str::StartsWith(rest, StrL("& "))) {
+            i += rest.s[0] == '&' ? 2 : 4;
+            continue;
+        }
+        if (!CommaAuthorStart(rest)) break;
+        while (i < len(s) && s.s[i] != ',') i++;
+        i += 2;
+        while (i < len(s)) {
+            int end = i;
+            while (end < len(s) && !strchr(" ,;", s.s[end])) end++;
+            if (!NameInitial(Str(s.s + i, end - i))) break;
+            i = end;
+            while (i < len(s) && strchr(" ,;", s.s[i])) i++;
+        }
+    }
+    if (!i) return 0;
+    int year = i + (i < len(s) && s.s[i] == '(' ? 1 : 0);
+    if (year + 4 <= len(s) && HasRefDate(Str(s.s + year, 4))) {
+        i = year + 4;
+        while (i < len(s) && (isalpha((u8)s.s[i]) || strchr(").,", s.s[i]))) i++;
+        while (i < len(s) && s.s[i] == ' ') i++;
+    }
+    return i;
+}
+
+// Title after a "Surname, I." author list: up to the end of the first sentence.
+static TempStr AuthorYearTitle(Str raw) {
+    int start = CommaAuthorsEnd(raw);
+    if (!start) return {};
+    for (int i = start; i < len(raw); i++) {
+        if (raw.s[i] != '.' && raw.s[i] != '?') continue;
+        if (i + 1 < len(raw) && raw.s[i + 1] != ' ') continue;
+        int word = i;
+        while (word > start && raw.s[word - 1] != ' ') word--;
+        if (raw.s[i] == '.' && NameInitial(Str(raw.s + word, i + 1 - word))) continue;
+        return TrimTitle(Str(raw.s + start, i - start));
+    }
+    return TrimTitle(Str(raw.s + start, len(raw) - start));
+}
+
+// A full-name list ends at a period or "(year"; a list wrapped onto the next line needs commas.
+static bool FullAuthorStart(Str s) {
+    int n = AuthorBlockLen(s);
+    Str block = Str(s.s, n);
+    while (len(block) && (block.s[len(block) - 1] == ',' || block.s[len(block) - 1] == ' ')) block.len--;
+    if (!AuthorNames(block)) return false;
+    if (n < len(s)) return s.s[n] == '.' || s.s[n] == ' ';
+    int commas = 0;
+    for (int i = 0; i < len(block); i++) commas += block.s[i] == ',' ? 1 : 0;
+    return commas >= 2;
+}
+
+static bool RefComplete(Str ref) {
+    while (len(ref) && (u8)ref.s[len(ref) - 1] <= ' ') ref.len--;
+    return len(ref) && (ref.s[len(ref) - 1] == '.' || ref.s[len(ref) - 1] == ')') && HasRefDate(ref);
+}
+
+// Appendix or acknowledgement headings and prose paragraphs end the bibliography.
+static bool RefSectionEnds(Str line) {
+    const Str ends[] = {StrL("Appendix"),   StrL("APPENDIX"),      StrL("Acknowledg"),
+                        StrL("ACKNOWLEDG"), StrL("Supplementary"), StrL("SUPPLEMENTARY")};
+    for (Str e : ends) {
+        if (str::StartsWith(line, e)) return true;
+    }
+    if (HasRefDate(line)) return false;
+    if (len(line) > 300) return true;
+    if (len(line) < 3 || line.s[len(line) - 1] == '.' || !(line.s[0] >= 'A' && line.s[0] <= 'Z')) return false;
+    // "A.1 Notation"
+    if (line.s[1] == '.' && isdigit((u8)line.s[2])) return true;
+    // "A. GEOMETRIC CONSTRUCTION"
+    if (line.s[1] != '.' || line.s[2] != ' ') return false;
+    int i = 2;
+    int upper = 0, lower = 0;
+    for (i++; i < len(line); i++) {
+        u8 ch = (u8)line.s[i];
+        upper += ch >= 'A' && ch <= 'Z' ? 1 : 0;
+        lower += ch >= 'a' && ch <= 'z' ? 1 : 0;
+    }
+    return upper >= 6 && lower == 0;
+}
+
+static void ParseAuthorYearRefs(const StrVec& lines, Vec<PaperRef*>& rows) {
+    int commaStarts = 0;
+    for (int i = 0; i < len(lines) && i < 60; i++) commaStarts += CommaAuthorStart(lines[i]) ? 1 : 0;
+    bool comma = commaStarts >= 3;
+    auto starts = [comma](Str s) { return comma ? CommaAuthorStart(s) : FullAuthorStart(s); };
+
+    str::Builder current;
+    for (Str line : lines) {
+        line = TrimLibrary(line);
+        if (!len(line)) continue;
+        if (RefSectionEnds(line)) break;
+        Str cur = ToStr(current);
+        bool fresh = comma ? CommaAuthorStart(line) && len(cur) > 15 : RefComplete(cur) && FullAuthorStart(line);
+        if (fresh) {
+            AddReference(rows, cur, AuthorYearTitle(cur));
+            current.Reset();
+        }
+        // MuPDF joins references on one line: "... Amsterdam, 1989. Hairer, E., ..."
+        int start = 0;
+        for (int i = 1; i + 1 < len(line); i++) {
+            if (line.s[i] != ' ' || (line.s[i - 1] != '.' && line.s[i - 1] != ')') || line.s[i + 1] == ' ') continue;
+            Str rest = Str(line.s + i + 1, len(line) - i - 1);
+            str::Builder head;
+            head.Append(ToStr(current));
+            if (len(head)) head.AppendChar(' ');
+            head.Append(Str(line.s + start, i - start));
+            if (!RefComplete(ToStr(head)) || !starts(rest)) continue;
+            AddReference(rows, ToStr(head), AuthorYearTitle(ToStr(head)));
+            current.Reset();
+            start = i + 1;
+        }
+        if (len(current)) current.AppendChar(' ');
+        current.Append(Str(line.s + start, len(line) - start));
+    }
+    AddReference(rows, ToStr(current), AuthorYearTitle(ToStr(current)));
+}
+
+static int LabelNumber(Str label) {
+    int n = 0;
+    Str rest = str::Parse(label.s[0] == '[' ? Str(label.s + 1, len(label) - 1) : label, "%d", &n);
+    return str::IsNull(rest) ? 0 : n;
+}
+
+// "[1]" or "12." alone on a line: join it with the citation that follows.
+// MDPI layouts extract the next label at the end of a line: "... Volume 109. 2."
+static TempStr JoinRefLabelLines(Str text) {
+    StrVec lines;
+    Split(&lines, text, StrL("\n"));
+    str::Builder out;
+    int lastLabel = 0;
+    for (int i = 0; i < len(lines); i++) {
+        Str line = TrimLibrary(lines[i]);
+        int prefix = 0;
+        bool label = len(line) && len(line) < 24 && i + 1 < len(lines) && !HasRefDate(line) &&
+                     ReferenceStart(str::JoinTemp(line, StrL(" x")), prefix) && prefix == len(line) + 1;
+        if (label) lastLabel = LabelNumber(line);
+        int space = str::LastIndexOfChar(line, ' ');
+        Str tail = space > 0 ? Str(line.s + space + 1, len(line) - space - 1) : Str{};
+        bool trailing = !label && lastLabel && i + 1 < len(lines) && len(tail) >= 2 && tail.s[len(tail) - 1] == '.' &&
+                        LabelNumber(tail) == lastLabel + 1;
+        if (trailing) {
+            lastLabel++;
+            out.Append(Str(line.s, space));
+            out.AppendChar('\n');
+            out.Append(tail);
+            out.AppendChar(' ');
+            continue;
+        }
+        out.Append(line);
+        out.AppendChar(label ? ' ' : '\n');
+    }
+    return str::DupTemp(ToStr(out));
 }
 
 // MuPDF may join adjacent citations; split only the next numeric label after a date/identifier.
@@ -482,14 +752,36 @@ static TempStr SplitRefLabels(Str text) {
     return str::DupTemp(ToStr(out));
 }
 
-static void ParseReferences(Str text, Vec<PaperRef*>& rows) {
+enum class RefText {
+    PdfBibliography,
+    OnePerLine,
+};
+
+static bool NumberedRefs(const StrVec& lines) {
+    int prefix = 0, seen = 0;
+    for (int i = 0; i < len(lines) && seen < 8; i++) {
+        Str line = TrimLibrary(lines[i]);
+        if (!len(line)) continue;
+        seen++;
+        if (ReferenceStart(line, prefix)) return true;
+    }
+    return false;
+}
+
+static void ParseReferences(Str text, Vec<PaperRef*>& rows, RefText kind) {
     str::Builder current;
     bool labelled = false;
+    bool pdf = kind == RefText::PdfBibliography;
     StrVec lines;
-    Split(&lines, SplitRefLabels(text), StrL("\n"));
+    Split(&lines, SplitRefLabels(pdf ? JoinRefLabelLines(text) : text), StrL("\n"));
+    if (pdf && !NumberedRefs(lines)) {
+        ParseAuthorYearRefs(lines, rows);
+        return;
+    }
     for (Str line : lines) {
         line = TrimLibrary(line);
         int prefix = 0;
+        if (pdf && labelled && !ReferenceStart(line, prefix) && RefSectionEnds(line)) break;
         if (ReferenceStart(line, prefix)) {
             AddReference(rows, ToStr(current));
             current.Reset();
@@ -554,6 +846,41 @@ static TempStr HeadlessRefs(Str text) {
     return {};
 }
 
+// Running headers/footers ("BETANCOURT ET AL.") repeat at the edges of many pages.
+static void RepeatedEdgeLines(const StrVec& pages, StrVec& repeated) {
+    constexpr int kEdgeLines = 3;
+    StrVec keys;
+    Vec<int> counts;
+    for (Str page : pages) {
+        StrVec lines, edges;
+        Split(&lines, page, StrL("\n"));
+        Vec<int> nonEmpty;
+        for (int i = 0; i < len(lines); i++) {
+            if (len(TrimLibrary(lines[i]))) VecAppend(nonEmpty, i);
+        }
+        for (int k = 0; k < len(nonEmpty); k++) {
+            if (k >= kEdgeLines && k < len(nonEmpty) - kEdgeLines) continue;
+            Str line = lines[nonEmpty[k]];
+            TempStr norm = NormalizePaper(line);
+            if (!len(norm) || len(line) > 100 || edges.Find(norm) >= 0) continue;
+            edges.Append(norm);
+        }
+        for (Str e : edges) {
+            int idx = keys.Find(e);
+            if (idx < 0) {
+                keys.Append(e);
+                VecAppend(counts, 1);
+            } else {
+                counts[idx]++;
+            }
+        }
+    }
+    int limit = std::max(3, len(pages) / 4);
+    for (int i = 0; i < len(keys); i++) {
+        if (counts[i] >= limit) repeated.Append(keys[i]);
+    }
+}
+
 static Str ReadReferences(Str source, HANDLE cancel, Str& error) {
     EngineBase* engine = CreateEngineMupdfFromFile(source, FileType::PDF, 72);
     AutoRelease release(engine);
@@ -561,12 +888,18 @@ static Str ReadReferences(Str source, HANDLE cancel, Str& error) {
         error = str::Dup(StrL("Cannot extract text; check PDF copying permissions/password."));
         return {};
     }
-    str::Builder refs, tail;
-    bool found = false;
+    StrVec pages, repeated;
     for (int page = 1; page <= engine->PageCount(); page++) {
         if (WaitForSingleObject(cancel, 0) == WAIT_OBJECT_0) return {};
+        pages.Append(engine->GetTextForPage(page));
+    }
+    RepeatedEdgeLines(pages, repeated);
+    str::Builder refs, tail;
+    // A later heading replaces an earlier match followed by prose (table of contents, introduction).
+    bool found = false, prose = false;
+    for (int page = 1; page <= engine->PageCount(); page++) {
         StrVec lines;
-        Split(&lines, engine->GetTextForPage(page), StrL("\n"));
+        Split(&lines, pages[page - 1], StrL("\n"));
         for (Str line : lines) {
             if (page > engine->PageCount() - std::max(3, engine->PageCount() / 4)) {
                 tail.Append(line);
@@ -579,12 +912,16 @@ static Str ReadReferences(Str source, HANDLE cancel, Str& error) {
             TempStr norm = NormalizePaper(line);
             if (str::Eq(norm, StrL("references")) || str::Eq(norm, StrL("bibliography")) ||
                 str::EndsWith(norm, StrL(" references")) || str::Eq(norm, StrL("literature cited"))) {
+                if (prose) refs.Reset();
                 found = true;
+                prose = false;
                 continue;
             }
-            if (found && len(TrimLibrary(line)) && !(len(norm) < 5 && isdigit((u8)norm.s[0]))) {
+            bool pageNumber = len(norm) && len(norm) < 5 && isdigit((u8)norm.s[0]) && !HasRefDate(norm);
+            if (found && len(TrimLibrary(line)) && !pageNumber && repeated.Find(norm) < 0) {
                 refs.Append(line);
                 refs.AppendChar('\n');
+                prose = prose || (len(line) > 300 && !HasRefDate(line));
             }
             if (len(refs) > kReferenceTextLimit) {
                 error = str::Dup(StrL("Bibliography exceeds 8 MB; paste a smaller reference list."));
@@ -1077,15 +1414,8 @@ static void ResolveRefMetadata(LibraryJob* job, PaperRef* ref) {
     str::Free(error);
 }
 
-static TempStr SafePaperName(PaperRef* row, int index) {
-    str::Builder name;
-    Str title = len(row->title) ? row->title : row->raw;
-    for (int i = 0; i < len(title) && len(name) < 100; i++) {
-        u8 c = (u8)title.s[i];
-        name.AppendChar((char)(c < ' ' || strchr("<>:\"/\\|?*", c) ? '_' : c));
-    }
-    while (len(name) && ((ToStr(name).s[len(name) - 1] == ' ') || (ToStr(name).s[len(name) - 1] == '.'))) name.len--;
-    return fmt("%04d-%s.pdf", index + 1, ToStr(name));
+static TempStr SafePaperName(PaperRef* row) {
+    return PaperFileNameTemp(len(row->title) ? row->title : row->raw);
 }
 
 static void SetRowStatus(LibraryJob* job, PaperRef* row, Str status) {
@@ -1259,31 +1589,45 @@ static void CollectOne(LibraryJob* job, PaperRef* ref, int index) {
         SetRowStatus(job, ref, StrL("Reading citation metadata"));
         ResolveRefMetadata(job, ref);
     }
-    TempStr output = path::JoinTemp(job->folder, SafePaperName(ref, index));
+    TempStr output = path::JoinTemp(job->folder, SafePaperName(ref));
     if (file::Exists(output)) {
         SetRowStatus(job, ref, StrL("File exists; choose another folder"));
         return;
     }
     Str url, error;
+    TempStr sciQuery, sciForm;
     const Str sources[] = {StrL("arXiv"), StrL("Sci-Hub"), StrL("Google")};
     for (int step = 0; step < 3; step++) {
         if (WaitForSingleObject(job->cancel, 0) == WAIT_OBJECT_0) break;
         SetRowStatus(job, ref, fmt("Searching %s", sources[step]));
         if (step == 0) url = job->task == LibraryTask::Download ? str::Dup(ref->url) : FindArxivPdf(job, ref);
-        if (step == 1 && len(ref->doi) && ResearchUrlAllowed(job->sci))
-            url = str::Dup(fmt("%s%s", job->sci, URLEncodeMayTruncateTemp(ref->doi)));
+        if (step == 1) {
+            // Sci-Hub: the DOI when known, else the title through its search form
+            if (len(ref->doi))
+                sciQuery = str::DupTemp(ref->doi);
+            else if (len(NormalizePaper(ref->title)) >= 8)
+                sciQuery = str::DupTemp(ref->title);
+            sciForm = SciHubFormTemp(sciQuery);
+            if (len(sciQuery) && ResearchUrlAllowed(job->sci)) url = str::Dup(SciHubUrlTemp(job->sci, sciQuery));
+        }
         bool ok = false;
         if (step == 2) {
             url = GooglePdf(job, ref, output, error);
             ok = len(url) > 0;
         } else
-            ok = len(url) && ResearchFetchPdf(url, output, error, job->cancel);
+            ok = len(url) && ResearchFetchPdf(url, output, error, job->cancel, step == 1 ? sciForm : Str{});
+        // a title search may match a different paper
+        if (ok && step == 1 && len(sciForm) && !WebPdfMatches(ref, output)) {
+            DeleteFileW(CWStrTemp(output));
+            str::ReplaceWithCopy(&error, StrL("PDF title could not be verified on its first page; rejected."));
+            ok = false;
+        }
         Str status = ok                                           ? StrL("Downloaded")
                      : len(url)                                   ? StrL("Download failed")
-                     : step == 1 && !len(ref->doi)                ? StrL("Skipped: no DOI")
+                     : step == 1 && !len(sciQuery)                ? StrL("Skipped: no DOI or title")
                      : step == 1 && !ResearchUrlAllowed(job->sci) ? StrL("Skipped: endpoint disabled")
                                                                   : StrL("No PDF link");
-        TraceAttempt(job, ref, sources[step], step == 1 ? ref->doi : Str{}, url, status, error);
+        TraceAttempt(job, ref, sources[step], step == 1 ? sciQuery : Str{}, url, status, error);
         if (ok) {
             EnterCriticalSection(&job->lock);
             str::ReplaceWithCopy(&ref->path, output);
@@ -1340,7 +1684,7 @@ static bool SaveLibraryReport(LibraryJob* job) {
     html.Append(StrL(R"HTML(<!doctype html><html lang="vi"><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
 <title>Kết quả tải reference</title><style>body{font:15px Segoe UI,sans-serif;margin:24px;background:#f6f7f9;color:#202124}table{border-collapse:collapse;width:100%;background:white}td,th{border:1px solid #ddd;padding:10px;text-align:left;vertical-align:top}th{background:#e8edf3}p{margin:6px 0}small{display:block;color:#555}a{overflow-wrap:anywhere}td:nth-child(2){min-width:260px}td:last-child{min-width:340px}.failed{color:#a32323}.ok{color:#17643a}</style>
-<h1>Các reference chưa tải được</h1><p>Thứ tự tải: arXiv ID → tên bài → tác giả → DOI → Sci-Hub → Google (citation đầy đủ + PDF). Bài trước 1991 không có ID bỏ qua arXiv. Crossref chỉ tra metadata.</p>)HTML"));
+<h1>Các reference chưa tải được</h1><p>Thứ tự tải: arXiv ID → tên bài → tác giả → DOI → Sci-Hub (DOI, không có thì tên bài) → Google (citation đầy đủ + PDF). Bài trước 1991 không có ID bỏ qua arXiv. Crossref chỉ tra metadata.</p>)HTML"));
     EnterCriticalSection(&job->lock);
     int missing = 0;
     for (PaperRef* row : job->rows)
@@ -1402,12 +1746,47 @@ static void OpenLibraryReport(LibraryWindow* w) {
     w->reportOpened = true;
 }
 
+// GROBID entries keep their line breaks; the library shows each entry on one line
+static TempStr JoinRefLinesTemp(Str raw) {
+    str::Builder out;
+    for (int i = 0; i < len(raw); i++) {
+        char c = raw.s[i] == '\n' ? ' ' : raw.s[i];
+        if (c == ' ' && len(out) > 0 && out.LastChar() == ' ') continue;
+        out.AppendChar(c);
+    }
+    return str::DupTemp(ToStr(out));
+}
+
+// GROBID's models first; the rule-based parser covers PDFs where they find no bibliography.
+static void ExtractReferences(Str paper, HANDLE cancel, Vec<PaperRef*>& rows, Str& error) {
+    Vec<GrobidRef*> refs;
+    bool ok = GrobidReadReferences(paper, refs);
+
+    // a numbered proof or list can look like a bibliography; real entries mostly carry a date or id
+    int dated = 0;
+    for (GrobidRef* r : refs) {
+        if (HasRefDate(r->raw)) dated++;
+    }
+    if (ok && dated * 2 >= len(refs)) {
+        for (GrobidRef* r : refs) {
+            int n = len(rows);
+            AddReference(rows, JoinRefLinesTemp(r->raw), r->title);
+            if (len(rows) > n && len(r->authors)) str::ReplaceWithCopy(&rows[n]->authors, r->authors);
+        }
+    }
+    for (GrobidRef* r : refs) GrobidRefFree(r);
+    if (len(rows) > 0) return;
+
+    Str text = ReadReferences(paper, cancel, error);
+    ParseReferences(text, rows, RefText::PdfBibliography);
+    str::Free(text);
+}
+
 static void LibraryWorker(LibraryJob* job) {
     if (job->task == LibraryTask::Extract) {
         Str error;
-        Str text = ReadReferences(job->paper, job->cancel, error);
         Vec<PaperRef*> rows;
-        ParseReferences(text, rows);
+        ExtractReferences(job->paper, job->cancel, rows, error);
         EnterCriticalSection(&job->lock);
         for (PaperRef* r : job->rows) delete r;
         job->rows = rows;
@@ -1416,7 +1795,6 @@ static void LibraryWorker(LibraryJob* job) {
             len(error) ? error
                        : StrL("Review extracted references; wrapped or unnumbered citations may need editing."));
         LeaveCriticalSection(&job->lock);
-        str::Free(text);
         str::Free(error);
     } else if (job->task == LibraryTask::Search) {
         Vec<PaperRef*> rows;
@@ -1689,7 +2067,13 @@ static void LibraryNotify(void* ctx, Str method, Str params) {
                 len(id) ? fmt("https://arxiv.org/abs/%s", id)
                         : fmt("https://arxiv.org/search/?query=%s&searchtype=title", URLEncodeMayTruncateTemp(title)));
         } else if (str::Eq(args[1], StrL("sci")) && len(args) == 6 && ResearchUrlAllowed(args[3])) {
-            LibraryBrowser(fmt("%s%s", EndpointTemp(args[3]), URLEncodeMayTruncateTemp(len(doi) ? doi : title)));
+            // a title needs Sci-Hub's search form, which the research browser posts
+            Str query = len(doi) ? doi : title;
+            MainWindow* owner = FindMainWindowByHwnd(w->owner);
+            if (owner && SciHubIsTitle(query))
+                OpenSciHubBrowser(owner, EndpointTemp(args[3]), query);
+            else
+                LibraryBrowser(SciHubUrlTemp(EndpointTemp(args[3]), query));
         } else if (str::Eq(args[1], StrL("anna")) && len(args) == 6 && ResearchUrlAllowed(args[4])) {
             LibraryBrowser(
                 fmt("%ssearch?ext=pdf&q=%s", EndpointTemp(args[4]), URLEncodeMayTruncateTemp(len(doi) ? doi : title)));
@@ -1703,7 +2087,7 @@ static void LibraryNotify(void* ctx, Str method, Str params) {
     if (str::Eq(method, StrL("edit")) && len(args) == 1) {
         for (PaperRef* r : w->job->rows) delete r;
         VecReset(w->job->rows);
-        ParseReferences(args[0], w->job->rows);
+        ParseReferences(args[0], w->job->rows, RefText::OnePerLine);
     } else if (str::Eq(method, StrL("search")) && len(args) == 1 && len(TrimLibrary(args[0]))) {
         Str query = args[0];
         TempStr id = FindArxiv(query);
@@ -1845,9 +2229,13 @@ TempStr TestPaperLibraryTemp(MainWindow* win, Str action, Str a, Str b, Str c, i
     if (str::Eq(action, StrL("library-extract"))) {
         LibraryJob job;
         Str error;
-        Str text = ReadReferences(a, job.cancel, error);
-        ParseReferences(text, job.rows);
-        str::Free(text);
+        if (str::Eq(b, StrL("rules"))) {
+            Str text = ReadReferences(a, job.cancel, error);
+            ParseReferences(text, job.rows, RefText::PdfBibliography);
+            str::Free(text);
+        } else {
+            ExtractReferences(a, job.cancel, job.rows, error);
+        }
         str::Free(error);
         TempStr result = LibraryState(&job);
         int start = str::IndexOf(result, StrL("\"rows\":"));

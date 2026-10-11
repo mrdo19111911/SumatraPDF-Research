@@ -47,6 +47,10 @@ tests/tmp/
 # Local releases, document corpora and user research output
 /SumatraPDF-auto-content-*/
 /SumatraPDF-*.zip
+/README-auto-content-*.txt
+/.claude/worktrees/
 /research/*/
+# GROBID models embedded by cmd/pack-embedded-prebuild.cmd (see cmd/gen-grobid-data.ts)
+!/research/grobid/
 /research/__pycache__/
 *.pyc

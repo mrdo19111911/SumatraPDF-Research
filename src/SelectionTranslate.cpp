@@ -486,13 +486,15 @@ static void AppendGrokTranslationText(Str line, str::Builder& out) {
     }
 }
 
-static void AppendClaudeTranslationText(Str line, str::Builder& out) {
-    TempStr eventType = AIChatJsonStrTemp(line, StrL("type"));
+static void AppendClaudeTranslationText(Str line, str::Builder& out, bool& failed) {
+    TempStr eventType = AIChatJsonTopStrTemp(line, StrL("type"));
     if (len(eventType) == 0) {
         return;
     }
     if (str::Eq(eventType, StrL("result"))) {
-        bool isError = str::Contains(line, StrL("\"is_error\":true"));
+        // a usage limit still says "success" but sets is_error
+        bool isError = AIChatJsonTopTrue(line, StrL("is_error"));
+        failed |= isError;
         TempStr text = AIChatJsonStrTemp(line, StrL("result"));
         if (len(text) > 0) {
             if (isError) {
@@ -565,9 +567,11 @@ static void AppendAntiGravityTranslationText(Str line, str::Builder& out) {
     }
 }
 
-static void ParseTranslationOutput(AIChatBackend backend, Str output, str::Builder& translationOut) {
+// Returns false when the provider reported an error; translationOut then holds its message.
+static bool ParseTranslationOutput(AIChatBackend backend, Str output, str::Builder& translationOut) {
+    bool failed = false;
     if (str::IsEmptyOrWhiteSpace(output)) {
-        return;
+        return true;
     }
     int off = 0;
     while (off < output.len) {
@@ -580,7 +584,7 @@ static void ParseTranslationOutput(AIChatBackend backend, Str output, str::Build
             if (backend == AIChatBackend::Grok) {
                 AppendGrokTranslationText(line, translationOut);
             } else if (backend == AIChatBackend::Claude) {
-                AppendClaudeTranslationText(line, translationOut);
+                AppendClaudeTranslationText(line, translationOut, failed);
             } else if (backend == AIChatBackend::Codex) {
                 AppendCodexTranslationText(line, translationOut);
             } else if (backend == AIChatBackend::AntiGravity) {
@@ -604,6 +608,7 @@ static void ParseTranslationOutput(AIChatBackend backend, Str output, str::Build
             translationOut.Append(trimmed);
         }
     }
+    return !failed;
 }
 
 static TempStr BuildGrokTranslateCmdLineTemp(Str exePath, Str prompt, Str cwd) {
@@ -884,14 +889,14 @@ static bool RunTranslation(AIChatBackend backend, Str srcLang, Str dstLang, Str 
 
     str::Builder translation;
     translation.Reserve(1024);
-    ParseTranslationOutput(backend, ToStr(output), translation);
+    bool parsed = ParseTranslationOutput(backend, ToStr(output), translation);
     LogTranslation(backend, StrL("<<< parsed"), ToStr(translation));
     if (len(translation) == 0) {
         msgOut = str::Dup(Tr("Translation response did not contain text."));
         LogTranslation(backend, StrL("<<< error"), msgOut);
         return false;
     }
-    if (TranslationLooksLikeError(ToStr(translation))) {
+    if (!parsed || TranslationLooksLikeError(ToStr(translation))) {
         msgOut = translation.TakeStr();
         LogTranslation(backend, StrL("<<< error"), msgOut);
         return false;

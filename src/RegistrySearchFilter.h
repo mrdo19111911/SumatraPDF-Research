@@ -1,14 +1,14 @@
 /* Copyright 2022 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
-#define kPdfFilterClsid "{55808EA8-81FE-43c6-AAE8-1D8149F941D3}"
-#define kPdfFilterHandler "{26CA6565-F22A-4f5e-B688-0AD051D56E96}"
+#define kPdfFilterClsid "{C0CB5416-8247-4C1F-8D0B-A5D302D816D0}"
+#define kPdfFilterHandler "{4A3C0E4C-369E-4E5B-ACAE-5DCDD263135A}"
 
-#define kTexFilterClsid "{AF57F784-ED93-4f2c-8C1D-CCDCB6E27CA6}"
-#define kTexFilterHandler "{3FAB27F8-08EC-4b9e-9EEE-181A6E846B8D}"
+#define kTexFilterClsid "{59C9A81D-2DD4-4C35-B7E1-2CD78C70D8E7}"
+#define kTexFilterHandler "{8B3E3582-6246-4314-A4EC-3A3000DAFFBE}"
 
-#define kEpubFilterClsid "{FE4C7847-4260-43e3-A449-08ED76009F94}"
-#define kEpubFilterHandler "{FF68D1A0-DA54-4fbf-A406-06CFDB764CA9}"
+#define kEpubFilterClsid "{233BB8A1-1D93-4915-A4C6-E7DEA27F1BC6}"
+#define kEpubFilterHandler "{69142277-163D-4A89-A9F2-51FC64B1D2C2}"
 
 bool InstallSearchFilter(Str dllPath, bool allUsers);
 bool UninstallSearchFilter();

@@ -50,4 +50,12 @@ console.log(
     },
   }),
 );
-console.log(JSON.stringify({ type: "result", subtype: "success" }));
+// Claude Code 2.1.29x puts "type" last, after nested usage iterations that carry their own "type".
+console.log(
+  JSON.stringify({
+    duration_api_ms: 1,
+    usage: { iterations: [{ type: "message" }] },
+    subtype: "success",
+    type: "result",
+  }),
+);

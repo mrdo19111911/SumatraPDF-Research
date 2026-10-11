@@ -6,7 +6,7 @@
 // NOT registered in tests/run-almost-all.ts — run directly:
 //   bun tests/ad-hoc-selection-translate.ts [--no-build]
 
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { ControlCommand, runControlCommand } from "./control.ts";
 import { EXE, runStandalone } from "./util.ts";
@@ -18,6 +18,20 @@ type Backend = {
   name: string;
   exePaths: string[];
 };
+
+// the app also finds the CLI bundled with the VS Code extension and the Claude desktop app
+function appClaudeInstalls(): string[] {
+  const home = process.env.USERPROFILE ?? "";
+  const list = (dir: string) => (existsSync(dir) ? readdirSync(dir) : []);
+  const vscode = join(home, ".vscode", "extensions");
+  const desktop = join(home, "AppData", "Roaming", "Claude", "claude-code");
+  return [
+    ...list(vscode)
+      .filter((d) => d.startsWith("anthropic.claude-code-"))
+      .map((d) => join(vscode, d, "resources", "native-binary", "claude.exe")),
+    ...list(desktop).flatMap((v) => list(join(desktop, v)).map((b) => join(desktop, v, b, "claude.exe"))),
+  ];
+}
 
 const BACKENDS: Backend[] = [
   {
@@ -34,6 +48,7 @@ const BACKENDS: Backend[] = [
     exePaths: [
       join(process.env.USERPROFILE ?? "", ".local", "bin", "claude.exe"),
       join(process.env.USERPROFILE ?? "", "AppData", "Local", "Programs", "claude-code", "claude.exe"),
+      ...appClaudeInstalls(),
     ],
   },
   {
@@ -152,7 +167,7 @@ function looksLikePolish(text: string, english: string): boolean {
 }
 
 function isSkippableError(translation: string): boolean {
-  return /authentication|api error|not installed|timed out|model is not supported/i.test(translation);
+  return /authentication|api error|not installed|timed out|model is not supported|hit your .*limit/i.test(translation);
 }
 
 async function translatePhrase(

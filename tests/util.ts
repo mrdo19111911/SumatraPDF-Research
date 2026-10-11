@@ -77,10 +77,27 @@ const SOURCE_EXE =
 // Keep the executable and its portable settings file in a fresh directory for
 // every test run. This prevents a manual run, or an earlier test that saves
 // settings, from changing the starting state of later tests.
-export const TESTS_TMP_DIR = join(ROOT, ".work", "tests-tmp");
+// SUMATRA_TESTS_TMP gives runs that execute in parallel their own directory
+export const TESTS_TMP_DIR = process.env.SUMATRA_TESTS_TMP || join(ROOT, ".work", "tests-tmp");
 // scratch files of tests (see tmpPath())
 export const TMP_DIR = join(TESTS_TMP_DIR, "tmp");
 export let EXE = SOURCE_EXE;
+
+// WebView2's browser process keeps its EBWebView lockfile open for seconds after
+// the previous test's SumatraPDF exited
+function removeTestsTmpDir(): void {
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    try {
+      rmSync(TESTS_TMP_DIR, { recursive: true, force: true });
+      return;
+    } catch (e) {
+      const busy = (e as NodeJS.ErrnoException).code === "EBUSY";
+      if (!busy || Date.now() > deadline) throw e;
+      Bun.sleepSync(250);
+    }
+  }
+}
 
 export function prepareTestEnvironment(): void {
   const sourceExe = resolve(SOURCE_EXE);
@@ -89,7 +106,7 @@ export function prepareTestEnvironment(): void {
   if (!existsSync(sourcePdb)) {
     throw new Error(`test executable PDB not found: ${sourcePdb}`);
   }
-  rmSync(TESTS_TMP_DIR, { recursive: true, force: true });
+  removeTestsTmpDir();
   // a test may have resolved a tmpPath() at import, before this wipe
   mkdirSync(TMP_DIR, { recursive: true });
   const testExe = join(TESTS_TMP_DIR, exeName);

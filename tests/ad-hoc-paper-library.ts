@@ -152,6 +152,73 @@ export async function testit(): Promise<void> {
           throw new Error("Headless bibliography not detected");
         if (JSON.parse(await probe("library-extract", numbered)).length !== 0)
           throw new Error("Numbered proof mistaken for bibliography");
+        const symbols = join(root, "symbols.pdf");
+        writeFileSync(
+          symbols,
+          makePdf(["References", "[1] A. Author. First paper. 2018.", "*", "[2] B. Author. Second paper. 2019."]),
+          "latin1",
+        );
+        if (JSON.parse(await probe("library-extract", symbols)).length !== 2)
+          throw new Error("Symbol-only line in bibliography");
+        const extractRaw = async (name: string, textLines: string[]) => {
+          const file = join(root, name);
+          writeFileSync(file, makePdf(textLines), "latin1");
+          // these fixtures join entries on one line, which only the rule-based fallback sees
+          return JSON.parse(await probe("library-extract", file, "rules")).map(
+            (r: { raw: string }) => r.raw,
+          ) as string[];
+        };
+        // Author-year: wrapped lines, references joined on one line, appendix after the list.
+        const authorYear = await extractRaw("author-year.pdf", [
+          "References",
+          "Betancourt, M.",
+          "The fundamental incompatibility of scalable HMC. In Proc. ICML, pp. 533-540, 2015.",
+          "de Leon, M. and Rodrigues, P. R. Methods of Differential Geometry, volume 158",
+          "of Studies. North-Holland, 1989. Hairer, E., Lubich, C., and Wanner, G. Geometric",
+          "Numerical Integration. Springer, New York, 2006.",
+          "Leimkuhler, B. and Reich, S. Simulating Hamiltonian Dynamics. Cambridge University Press,",
+          "2004.",
+          "A. GEOMETRIC CONSTRUCTION OF THE DYNAMICS",
+          "Symplectic integrators are applicable to Hamiltonian dynamics over any manifold.",
+        ]);
+        const authorYearTitles = JSON.parse(await probe("library-extract", join(root, "author-year.pdf"), "rules")).map(
+          (r: { title: string }) => r.title,
+        );
+        if (
+          authorYearTitles[0] !== "The fundamental incompatibility of scalable HMC" ||
+          authorYearTitles[2] !== "Geometric Numerical Integration"
+        )
+          throw new Error(`Author-year titles: ${JSON.stringify(authorYearTitles)}`);
+        const starts = authorYear.map((r) => r.split(",")[0]).join("|");
+        if (starts !== "Betancourt|de Leon|Hairer|Leimkuhler" || !authorYear[3]!.endsWith("2004."))
+          throw new Error(`Author-year bibliography: ${JSON.stringify(authorYear)}`);
+        const apa = await extractRaw("apa.pdf", [
+          "References",
+          "Bishop, C. M. 2006.",
+          "Pattern Recognition and Machine Learning. Springer, New York.",
+          "Geyer, C. J. 1992.",
+          "Practical Markov Chain Monte Carlo. Statistical Science 473-483.",
+          "Neal, R. M. 1994. An Improved Acceptance Procedure. Journal of Physics 111 194-203.",
+        ]);
+        if (apa.length !== 3) throw new Error(`Year-first author-year bibliography: ${JSON.stringify(apa)}`);
+        const fullNames = await extractRaw("full-names.pdf", [
+          "References",
+          "Ralph Abraham and Jerrold E. Marsden. Foundations of Mechanics. AMS Chelsea Pub-",
+          "lishing, Redwood City, CA, 1978.",
+          "P.-A. Absil, R. Mahony, and R. Sepulchre. Optimization algorithms on matrix manifolds.",
+          "Princeton University Press, Princeton, NJ, 2008.",
+          "Jorge Nocedal and Stephen J. Wright. Numerical optimization. Springer, 2006.",
+        ]);
+        if (fullNames.length !== 3) throw new Error(`Full-name bibliography: ${JSON.stringify(fullNames)}`);
+        const ownLine = await extractRaw("label-lines.pdf", [
+          "References",
+          "[1]",
+          "A. Author. First paper. 2018.",
+          "[2]",
+          "B. Author. Second paper. 2019.",
+        ]);
+        if (ownLine.length !== 2 || !ownLine[1]!.startsWith("B. Author"))
+          throw new Error(`Labels on their own lines: ${JSON.stringify(ownLine)}`);
         if (process.argv.includes("--live-fetch")) {
           const url = process.env.RESEARCH_LIVE_FETCH_URL;
           if (!url) throw new Error("Set RESEARCH_LIVE_FETCH_URL");

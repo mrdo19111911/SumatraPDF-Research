@@ -3606,9 +3606,11 @@ struct ToolbarGroup : ILayout {
     int LayoutChildCount() override { return 2; }
     ILayout* LayoutChildAt(int i) override { return i == 0 ? label : (ILayout*)content; }
     Size Layout(Constraints bc) override {
-        int pad = DpiScale(4);
+        bool compact = tb->compact && !tb->vertical;
+        int pad = compact ? 0 : DpiScale(4);
         int width = tb->vertical ? std::min(bc.max.dx, DpiScale(112)) : bc.max.dx;
-        labelSize = label->Layout(ExpandInf());
+        label->SetVisibility(compact ? Visibility::Collapse : Visibility::Visible);
+        labelSize = compact ? Size{} : label->Layout(ExpandInf());
         contentSize = content->Layout(Loose({std::max(1, width - 2 * pad), Inf}));
         return {std::max(contentSize.dx, labelSize.dx) + 2 * pad, contentSize.dy + labelSize.dy + 2 * pad};
     }
@@ -3616,7 +3618,7 @@ struct ToolbarGroup : ILayout {
     int MinIntrinsicHeight(int width) override { return Layout(Loose({width, Inf})).dy; }
     void SetBounds(Rect bounds) override {
         ILayout::SetBounds(bounds);
-        int pad = DpiScale(4);
+        int pad = tb->compact && !tb->vertical ? 0 : DpiScale(4);
         label->SetBounds({bounds.x + pad, bounds.y + pad, bounds.dx - 2 * pad, labelSize.dy});
         content->SetBounds({bounds.x + pad, bounds.y + pad + labelSize.dy, contentSize.dx, contentSize.dy});
     }
@@ -3661,7 +3663,9 @@ Size UpdateToolbarPlacement(MainWindow* win, Size area, int panelsDx) {
     ToolbarVirt* tb = win->toolbarVirt;
     if (!tb || !tb->host || !tb->host->layout || area.dx <= 0 || area.dy <= 0) return {};
     bool previous = tb->vertical;
+    bool previousCompact = tb->compact;
     tb->vertical = false;
+    tb->compact = false;
     Size top = tb->host->layout->Layout(Loose(area));
     tb->vertical = true;
     Size right = tb->host->layout->Layout(Loose({Inf, area.dy}));
@@ -3683,8 +3687,13 @@ Size UpdateToolbarPlacement(MainWindow* win, Size area, int panelsDx) {
     }
     if (right.dx >= area.dx || right.dy > area.dy) vertical = false;
     tb->vertical = vertical;
+    // a narrow window wrapped the labelled groups over the whole document area
+    if (!vertical && top.dy > area.dy / 2) {
+        tb->compact = true;
+        top = tb->host->layout->Layout(Loose(area));
+    }
     tb->host->Relayout();
-    if (vertical != previous) {
+    if (vertical != previous || tb->compact != previousCompact) {
         HideToolbarHoverDropdown(win);
         tb->host->Invalidate(true);
     }
@@ -3867,6 +3876,7 @@ static void BuildToolbarLayout(MainWindow* win) {
 
 static void PaintToolbarBackground(MainWindow* win, VirtHostPaintEvent* ev) {
     ev->gfx->FillRect(ev->clientRect, TbBgColor());
+    if (win->toolbarVirt->compact && !win->toolbarVirt->vertical) return;
     for (const auto& group : win->toolbarVirt->groups) {
         if (IsCollapsed(group.layout)) continue;
         ev->gfx->FillRoundedRect(group.layout->lastBounds, DpiScale(5), TbBgColor(), TbEdgeColor());

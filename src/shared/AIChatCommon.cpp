@@ -141,6 +141,51 @@ TempStr AIChatJsonStrTemp(Str json, Str key) {
     return ToStrTemp(buf);
 }
 
+// Offset of `pattern` (a quoted key plus the start of its value) at the top level, or -1.
+// Nested objects may reuse the key before it,
+// e.g. Claude's result event: {"usage":{"iterations":[{"type":"message"}]},...,"type":"result"}.
+static int JsonTopKeyPos(Str json, Str pattern) {
+    int depth = 0;
+    bool inString = false;
+    for (int i = 0; i < len(json); i++) {
+        char c = json.s[i];
+        if (inString) {
+            if (c == '\\') {
+                i++;
+            } else if (c == '"') {
+                inString = false;
+            }
+            continue;
+        }
+        if (c == '{' || c == '[') {
+            depth++;
+        } else if (c == '}' || c == ']') {
+            depth--;
+        } else if (c == '"') {
+            Str rest = Str(json.s + i, len(json) - i);
+            if (depth == 1 && str::StartsWith(rest, pattern)) {
+                return i;
+            }
+            inString = true;
+        }
+    }
+    return -1;
+}
+
+// String value of a top-level key.
+TempStr AIChatJsonTopStrTemp(Str json, Str key) {
+    int pos = JsonTopKeyPos(json, fmt("\"%s\":\"", key));
+    if (pos < 0) {
+        return {};
+    }
+    return AIChatJsonStrTemp(Str(json.s + pos, len(json) - pos), key);
+}
+
+// True when a top-level key holds the literal true, e.g. Claude's {"type":"result","is_error":true}.
+bool AIChatJsonTopTrue(Str json, Str key) {
+    return JsonTopKeyPos(json, fmt("\"%s\":true", key)) >= 0;
+}
+
 #if !defined(SUMATRA_NG)
 MainWindow* AIChatFindMainWindowByFrame(HWND hwndFrame) {
     for (MainWindow* w : gWindows) {

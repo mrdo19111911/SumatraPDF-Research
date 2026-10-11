@@ -44,6 +44,7 @@ extern "C" {
 #include "EbookDoc.h"
 #include "Settings.h"
 #include "EngineMupdf.h"
+#include "PageLayout.h"
 
 // A5
 static float layoutA5DxPt = 420.F;
@@ -7810,6 +7811,575 @@ bool EngineMupdf::TryExtractPageText(int pageNo, PageText* out) {
     *out = ExtractPageTextLocked(this, pageInfo);
     renderLock.Unlock();
     pagesLock.Unlock();
+    return true;
+}
+
+//--- ExtractPageLayout (PageLayout.h)
+
+struct LayoutFontFlags {
+    fz_font* font;
+    int flags;
+};
+
+// FontDescriptor /Flags of the fonts in a resource dict and its forms. pdfalto
+// (xpdf GfxFont::isBold/isItalic) reads bold/italic from these, not the font program.
+static void CollectLayoutFontFlags(fz_context* ctx, pdf_document* doc, pdf_obj* res, Vec<LayoutFontFlags>& out,
+                                   Vec<pdf_obj*>& seen, int depth) {
+    if (!res || depth > 8 || VecContains(seen, res)) {
+        return;
+    }
+    VecAppend(seen, res);
+
+    pdf_resource_stack rdb{nullptr, res};
+    pdf_obj* fonts = pdf_dict_get(ctx, res, PDF_NAME(Font));
+    int n = pdf_dict_len(ctx, fonts);
+    for (int i = 0; i < n; i++) {
+        pdf_font_desc* fd = nullptr;
+        fz_var(fd);
+        fz_try(ctx) {
+            fd = pdf_load_font(ctx, doc, &rdb, pdf_dict_get_val(ctx, fonts, i));
+            if (fd && fd->font) {
+                VecAppend(out, LayoutFontFlags{fd->font, fd->flags});
+            }
+        }
+        fz_always(ctx) {
+            pdf_drop_font(ctx, fd);
+        }
+        fz_catch(ctx) {
+            fz_ignore_error(ctx);
+        }
+    }
+
+    pdf_obj* xobjs = pdf_dict_get(ctx, res, PDF_NAME(XObject));
+    n = pdf_dict_len(ctx, xobjs);
+    for (int i = 0; i < n; i++) {
+        pdf_obj* xobj = pdf_dict_get_val(ctx, xobjs, i);
+        if (!pdf_name_eq(ctx, pdf_dict_get(ctx, xobj, PDF_NAME(Subtype)), PDF_NAME(Form))) {
+            continue;
+        }
+        CollectLayoutFontFlags(ctx, doc, pdf_dict_get(ctx, xobj, PDF_NAME(Resources)), out, seen, depth + 1);
+    }
+}
+
+static int LayoutFontFlagsFor(Vec<LayoutFontFlags>& flags, fz_font* font) {
+    for (LayoutFontFlags& f : flags) {
+        if (f.font == font) {
+            return f.flags;
+        }
+    }
+    return -1;
+}
+
+// pdfalto (xpdf) word breaks: white space (mupdf adds spaces at gaps), plus a baseline shift
+static bool IsLayoutSpace(int c) {
+    return c == ' ' || c == '\t' || c == 0xA0 || (c >= 0x2000 && c <= 0x200B) || c == 0x202F || c == 0x205F ||
+           c == 0x3000;
+}
+
+static void LayoutBoxFromRect(fz_rect r, fz_point origin, float& x, float& y, float& w, float& h) {
+    x = r.x0 - origin.x;
+    y = r.y0 - origin.y;
+    w = r.x1 - r.x0;
+    h = r.y1 - r.y0;
+}
+
+// a glyph of a line; a spacing accent drawn over a letter is folded into it
+struct LayoutChar {
+    fz_stext_char* src = nullptr; // base glyph: font, size, baseline
+    int c = 0;
+    int mark = 0; // combining mark after c when no precomposed letter exists
+    fz_rect r = fz_empty_rect;
+    bool removed = false;
+    bool nearAccent = false; // a space beside a folded accent
+};
+
+struct LayoutWordBuilder {
+    PageTextLayout* out = nullptr;
+    Vec<LayoutFontFlags>* fontFlags = nullptr;
+    Vec<LayoutChar> chars; // the current line's glyphs
+    fz_point origin{};
+    str::Builder text;
+    fz_font* font = nullptr;
+    Str fontName;
+    float size = 0;
+    float baseline = 0;
+    bool rotated = false;
+    fz_rect box = fz_empty_rect;
+    bool open = false;
+};
+
+static void EndLayoutWord(LayoutWordBuilder& b) {
+    if (!b.open) {
+        return;
+    }
+    b.open = false;
+    PageLayoutWord w;
+    w.text = str::Dup(b.out->arena, ToStr(b.text));
+    w.font = b.fontName;
+    w.fontSize = b.size;
+    w.pdfFontFlags = LayoutFontFlagsFor(*b.fontFlags, b.font);
+    w.bold = b.font && b.font->flags.is_bold;
+    w.italic = b.font && b.font->flags.is_italic;
+    w.rotated = b.rotated;
+    w.baseline = b.baseline;
+    LayoutBoxFromRect(b.box, b.origin, w.x, w.y, w.w, w.h);
+    VecAppend(b.out->words, w);
+}
+
+static void AddLayoutChar(LayoutWordBuilder& b, LayoutChar& lc) {
+    fz_stext_char* ch = lc.src;
+    float base = b.rotated ? ch->origin.x - b.origin.x : ch->origin.y - b.origin.y;
+    // a font or size change between touching glyphs (small caps) stays in the word,
+    // which keeps its first glyph's style
+    if (b.open && fabsf(base - b.baseline) > 1) {
+        EndLayoutWord(b);
+    }
+    if (!b.open) {
+        b.open = true;
+        b.text.Reset();
+        b.box = fz_empty_rect;
+        b.baseline = base;
+        b.size = ch->size;
+        if (ch->font != b.font || len(b.fontName) == 0) {
+            // the font name lives as long as the layout, like the word text
+            b.font = ch->font;
+            b.fontName = ch->font ? str::Dup(b.out->arena, Str(ch->font->name)) : Str();
+        }
+    }
+    char utf8[FZ_UTFMAX];
+    int n = fz_runetochar(utf8, lc.c);
+    b.text.Append(Str(utf8, n));
+    if (lc.mark) {
+        n = fz_runetochar(utf8, lc.mark);
+        b.text.Append(Str(utf8, n));
+    }
+    b.box = fz_union_rect(b.box, lc.r);
+}
+
+//--- spacing accents (TeX draws "é" as "e" and "´")
+
+struct LayoutAccent {
+    int mark;                // combining mark
+    const char* bases;       // ASCII letters with a precomposed form
+    const char16_t* letters; // their precomposed (NFC) letters, same order
+};
+
+static const LayoutAccent gLayoutAccents[] = {
+    {0x300, "AEINOUWYaeinouwy", u"ÀÈÌǸÒÙẀỲàèìǹòùẁỳ"},
+    {0x301, "ACEGIKLMNOPRSUWYZacegiklmnoprsuwyz", u"ÁĆÉǴÍḰĹḾŃÓṔŔŚÚẂÝŹáćéǵíḱĺḿńóṕŕśúẃýź"},
+    {0x302, "ACEGHIJOSUWYZaceghijosuwyz", u"ÂĈÊĜĤÎĴÔŜÛŴŶẐâĉêĝĥîĵôŝûŵŷẑ"},
+    {0x303, "AEINOUVYaeinouvy", u"ÃẼĨÑÕŨṼỸãẽĩñõũṽỹ"},
+    {0x304, "AEGIOUYaegiouy", u"ĀĒḠĪŌŪȲāēḡīōūȳ"},
+    {0x306, "AEGIOUaegiou", u"ĂĔĞĬŎŬăĕğĭŏŭ"},
+    {0x307, "ABCDEFGHIMNOPRSTWXYZabcdefghmnoprstwxyz", u"ȦḂĊḊĖḞĠḢİṀṄȮṖṘṠṪẆẊẎŻȧḃċḋėḟġḣṁṅȯṗṙṡṫẇẋẏż"},
+    {0x308, "AEHIOUWXYaehiotuwxy", u"ÄËḦÏÖÜẄẌŸäëḧïöẗüẅẍÿ"},
+    {0x30A, "AUauwy", u"ÅŮåůẘẙ"},
+    {0x30B, "OUou", u"ŐŰőű"},
+    {0x30C, "ACDEGHIKLNORSTUZacdeghijklnorstuz", u"ǍČĎĚǦȞǏǨĽŇǑŘŠŤǓŽǎčďěǧȟǐǰǩľňǒřšťǔž"},
+    {0x327, "CDEGHKLNRSTcdeghklnrst", u"ÇḐȨĢḨĶĻŅŖŞŢçḑȩģḩķļņŗşţ"},
+    {0x328, "AEIOUaeiou", u"ĄĘĮǪŲąęįǫų"},
+};
+
+// combining mark of a spacing accent glyph, 0 if c is none (poppler's getCombiningChar)
+static int LayoutAccentMark(int c) {
+    switch (c) {
+        case 0x60:
+        case 0x2CB:
+            return 0x300;
+        case 0xB4:
+        case 0x2CA:
+            return 0x301;
+        case 0x5E:
+        case 0x2C6:
+            return 0x302;
+        case 0x7E:
+        case 0x2DC:
+            return 0x303;
+        case 0xAF:
+        case 0x2C9:
+            return 0x304;
+        case 0x2D8:
+            return 0x306;
+        case 0x2D9:
+            return 0x307;
+        case 0xA8:
+            return 0x308;
+        case 0x2DA:
+            return 0x30A;
+        case 0x2DD:
+            return 0x30B;
+        case 0x2C7:
+            return 0x30C;
+        case 0xB8:
+            return 0x327;
+        case 0x2DB:
+            return 0x328;
+    }
+    return 0;
+}
+
+// Latin, Greek and Cyrillic letters can carry an accent
+static bool IsLayoutLetter(int c) {
+    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+        return true;
+    }
+    if (c == 0xD7 || c == 0xF7) {
+        return false;
+    }
+    return (c >= 0xC0 && c <= 0x24F) || (c >= 0x370 && c <= 0x4FF) || (c >= 0x1E00 && c <= 0x1EFF);
+}
+
+// precomposed letter + mark, 0 if none: e + U+0301 -> é, dotless ı + U+0302 -> î
+static int ComposeLayoutLetter(int c, int mark) {
+    if (c == 0x131) {
+        c = 'i';
+    } else if (c == 0x237) {
+        c = 'j';
+    }
+    if (c > 0x7F) {
+        return 0;
+    }
+    for (const LayoutAccent& a : gLayoutAccents) {
+        if (a.mark != mark) {
+            continue;
+        }
+        const char* pos = strchr(a.bases, c);
+        return pos ? a.letters[pos - a.bases] : 0;
+    }
+    return 0;
+}
+
+// the letter next to the accent at i in direction dir, across spaces; -1 if none
+static int AccentBaseIdx(Vec<LayoutChar>& chars, int i, int dir) {
+    for (int j = i + dir; j >= 0 && j < len(chars); j += dir) {
+        LayoutChar& lc = chars[j];
+        if (lc.removed || IsLayoutSpace(lc.c)) {
+            continue;
+        }
+        return IsLayoutLetter(lc.c) && lc.mark == 0 ? j : -1;
+    }
+    return -1;
+}
+
+// horizontal overlap of the accent and a letter, relative to the narrower of the two
+static float AccentOverlap(Vec<LayoutChar>& chars, int accent, int base) {
+    if (base < 0) {
+        return 0;
+    }
+    fz_rect a = chars[accent].r;
+    fz_rect b = chars[base].r;
+    float w = fminf(a.x1 - a.x0, b.x1 - b.x0);
+    if (w <= 0) {
+        return 0;
+    }
+    return (fminf(a.x1, b.x1) - fmaxf(a.x0, b.x0)) / w;
+}
+
+static void MarkAccentSpaces(Vec<LayoutChar>& chars, int i, int dir) {
+    for (int j = i + dir; j >= 0 && j < len(chars) && IsLayoutSpace(chars[j].c); j += dir) {
+        chars[j].nearAccent = true;
+    }
+}
+
+constexpr float kMinAccentOverlap = 0.5f;
+constexpr float kAccentSpaceGap = 0.15f; // in font sizes
+
+// mupdf saw a gap at the accent's offset: "M ¨ULLER" -> "MÜLLER", "Le ´on" -> "León".
+// A space beside a folded accent goes when the glyphs around it nearly touch.
+static void DropAccentSpaces(Vec<LayoutChar>& chars) {
+    int n = len(chars);
+    for (int i = 0; i < n; i++) {
+        if (!chars[i].nearAccent || chars[i].removed) {
+            continue;
+        }
+        int prev = i - 1;
+        while (prev >= 0 && (chars[prev].removed || IsLayoutSpace(chars[prev].c))) {
+            prev--;
+        }
+        int next = i + 1;
+        while (next < n && (chars[next].removed || IsLayoutSpace(chars[next].c))) {
+            next++;
+        }
+        if (prev < 0 || next >= n) {
+            continue;
+        }
+        float size = fmaxf(chars[prev].src->size, chars[next].src->size);
+        if (chars[next].r.x0 - chars[prev].r.x1 < kAccentSpaceGap * size) {
+            chars[i].removed = true;
+        }
+    }
+}
+
+// Like pdfalto, a spacing accent whose box mostly overlaps the letter before or after
+// it becomes part of that letter: "Jos´e" -> "José", "BENO ˆ IT" -> "BENOÎT".
+// An accent over no letter of its line (a formula) stays.
+static void FoldLayoutAccents(Vec<LayoutChar>& chars) {
+    bool folded = false;
+    for (int i = 0; i < len(chars); i++) {
+        int mark = LayoutAccentMark(chars[i].c);
+        if (!mark) {
+            continue;
+        }
+        int prev = AccentBaseIdx(chars, i, -1);
+        int next = AccentBaseIdx(chars, i, 1);
+        float prevOverlap = AccentOverlap(chars, i, prev);
+        float nextOverlap = AccentOverlap(chars, i, next);
+        if (fmaxf(prevOverlap, nextOverlap) < kMinAccentOverlap) {
+            continue;
+        }
+
+        LayoutChar& base = chars[nextOverlap >= prevOverlap ? next : prev];
+        int composed = ComposeLayoutLetter(base.c, mark);
+        if (composed) {
+            base.c = composed;
+        } else {
+            base.mark = mark;
+        }
+        base.r = fz_union_rect(base.r, chars[i].r);
+        chars[i].removed = true;
+        MarkAccentSpaces(chars, i, -1);
+        MarkAccentSpaces(chars, i, 1);
+        folded = true;
+    }
+    if (folded) {
+        DropAccentSpaces(chars);
+    }
+}
+
+// pdfalto's line and paragraph thresholds (xpdf TextOutputDev), in font sizes
+constexpr float kMaxIntraLineDelta = 0.5f; // baseline shift inside a line (super/subscripts)
+constexpr float kMaxWordSpacing = 1.5f;    // widest gap inside a line
+constexpr float kMaxColSpacing = 0.3f;     // after a page's first line: gap that starts a block
+constexpr float kMaxBlockFontSizeDelta = 0.05f;
+constexpr float kMaxLineSpacingDelta = 1.5f;
+
+static void ExtractLayoutWords(LayoutWordBuilder& b, fz_stext_line* line, Vec<int>& srcLines, int srcLine) {
+    PageTextLayout& out = *b.out;
+    b.rotated = line->wmode != 0 || fabsf(line->dir.y) > 0.01f || line->dir.x < 0;
+    Vec<LayoutChar>& chars = b.chars;
+    VecClear(chars);
+    for (fz_stext_char* ch = line->first_char; ch; ch = ch->next) {
+        LayoutChar lc;
+        lc.src = ch;
+        lc.c = ch->c < ' ' ? ' ' : ch->c;
+        lc.r = fz_rect_from_quad(ch->quad);
+        VecAppend(chars, lc);
+    }
+    if (!b.rotated) {
+        FoldLayoutAccents(chars);
+    }
+    for (LayoutChar& lc : chars) {
+        if (lc.removed) {
+            continue;
+        }
+        if (IsLayoutSpace(lc.c)) {
+            EndLayoutWord(b);
+            continue;
+        }
+        AddLayoutChar(b, lc);
+    }
+    EndLayoutWord(b);
+    while (len(srcLines) < len(out.words)) {
+        VecAppend(srcLines, srcLine);
+    }
+}
+
+// pdfalto TextLine: the next word continues the line on the same baseline, to the
+// right and closer than a column gap. mupdf breaks lines at wide gaps (justified text).
+static bool ContinuesLayoutLine(PageLayoutWord& prev, PageLayoutWord& next, float lineFontSize, bool sameSrcLine) {
+    if (prev.rotated != next.rotated) {
+        return false;
+    }
+    if (prev.rotated) {
+        return sameSrcLine;
+    }
+    if (fabsf(next.baseline - prev.baseline) >= kMaxIntraLineDelta * fmaxf(lineFontSize, next.fontSize)) {
+        return false;
+    }
+    if (next.x > prev.x + prev.w + kMaxWordSpacing * lineFontSize) {
+        return false;
+    }
+    return next.x >= prev.x && prev.baseline >= next.y;
+}
+
+static void AppendLayoutLine(PageTextLayout& out, int firstWord, int endWord) {
+    PageLayoutLine l;
+    l.firstWord = firstWord;
+    l.nWords = endWord - firstWord;
+    fz_rect r = fz_empty_rect;
+    for (int i = firstWord; i < endWord; i++) {
+        PageLayoutWord& w = out.words[i];
+        r = fz_union_rect(r, fz_make_rect(w.x, w.y, w.x + w.w, w.y + w.h));
+    }
+    LayoutBoxFromRect(r, fz_make_point(0, 0), l.x, l.y, l.w, l.h);
+    VecAppend(out.lines, l);
+}
+
+static void GroupLayoutLines(PageTextLayout& out, Vec<int>& srcLines) {
+    int n = len(out.words);
+    int start = 0;
+    float lineFontSize = 0;
+    for (int i = 0; i < n; i++) {
+        PageLayoutWord& w = out.words[i];
+        if (i > start) {
+            bool sameSrc = srcLines[i - 1] == srcLines[i];
+            if (!ContinuesLayoutLine(out.words[i - 1], w, lineFontSize, sameSrc)) {
+                AppendLayoutLine(out, start, i);
+                start = i;
+                lineFontSize = 0;
+            }
+        }
+        lineFontSize = fmaxf(lineFontSize, w.fontSize);
+    }
+    if (n > start) {
+        AppendLayoutLine(out, start, n);
+    }
+}
+
+static float LayoutLineFontSize(PageTextLayout& out, PageLayoutLine& l) {
+    float size = 0;
+    for (int i = l.firstWord; i < l.firstWord + l.nWords; i++) {
+        size = fmaxf(size, out.words[i].fontSize);
+    }
+    return size;
+}
+
+static void AppendLayoutBlock(PageTextLayout& out, int firstLine, int endLine) {
+    PageLayoutBlock bl;
+    bl.firstLine = firstLine;
+    bl.nLines = endLine - firstLine;
+    fz_rect r = fz_empty_rect;
+    for (int i = firstLine; i < endLine; i++) {
+        PageLayoutLine& l = out.lines[i];
+        r = fz_union_rect(r, fz_make_rect(l.x, l.y, l.x + l.w, l.y + l.h));
+    }
+    LayoutBoxFromRect(r, fz_make_point(0, 0), bl.x, bl.y, bl.w, bl.h);
+    VecAppend(out.blocks, bl);
+}
+
+// pdfalto TextBlock (paragraph): a line joins the previous one's block unless it is
+// above it, changes font size or is too far below. Only after the page's first line
+// does a gap to the right also start a block (a page number beside a running head).
+static void GroupLayoutBlocks(PageTextLayout& out) {
+    int n = len(out.lines);
+    int start = 0;
+    for (int i = 1; i < n; i++) {
+        PageLayoutLine& prev = out.lines[i - 1];
+        PageLayoutLine& l = out.lines[i];
+        float prevSize = LayoutLineFontSize(out, prev);
+        float size = LayoutLineFontSize(out, l);
+        bool newBlock = false;
+        if (i == 1) {
+            newBlock = out.words[l.firstWord].x > prev.x + prev.w + kMaxColSpacing * prevSize;
+        }
+        bool same = !newBlock && l.y + l.h >= prev.y && fabsf(size - prevSize) < size * kMaxBlockFontSizeDelta &&
+                    l.y - prev.y < prevSize * kMaxLineSpacingDelta;
+        if (!same) {
+            AppendLayoutBlock(out, start, i);
+            start = i;
+        }
+    }
+    if (n > start) {
+        AppendLayoutBlock(out, start, n);
+    }
+}
+
+constexpr int kMinLayoutImagePixels = 8;
+
+// Words in mupdf's order, regrouped into lines and blocks with pdfalto's rules
+static void BuildPageLayout(fz_stext_page* stext, Vec<LayoutFontFlags>& fontFlags, PageTextLayout& out) {
+    LayoutWordBuilder b;
+    b.out = &out;
+    b.fontFlags = &fontFlags;
+    b.origin = fz_make_point(stext->mediabox.x0, stext->mediabox.y0);
+    out.width = stext->mediabox.x1 - stext->mediabox.x0;
+    out.height = stext->mediabox.y1 - stext->mediabox.y0;
+
+    Vec<int> srcLines;
+    int srcLine = 0;
+    for (fz_stext_block* block = stext->first_block; block; block = block->next) {
+        if (block->type == FZ_STEXT_BLOCK_IMAGE) {
+            // pdfalto skips images of 8 pixels or less a side (ps2pdf draws rules as 1x1 masks)
+            fz_image* img = block->u.i.image;
+            if (!img || img->w <= kMinLayoutImagePixels || img->h <= kMinLayoutImagePixels) {
+                continue;
+            }
+            // the image's own box, unclipped like pdfalto's
+            PageLayoutImage im;
+            fz_rect r = fz_transform_rect(fz_unit_rect, block->u.i.transform);
+            LayoutBoxFromRect(r, b.origin, im.x, im.y, im.w, im.h);
+            VecAppend(out.images, im);
+            continue;
+        }
+        if (block->type == FZ_STEXT_BLOCK_VECTOR) {
+            PageLayoutVector v;
+            LayoutBoxFromRect(block->bbox, b.origin, v.x, v.y, v.w, v.h);
+            v.stroked = (block->u.v.flags & FZ_STEXT_VECTOR_IS_STROKED) != 0;
+            u32 decoration = FZ_STEXT_VECTOR_IS_HIGHLIGHT | FZ_STEXT_VECTOR_IS_UNDERLINE | FZ_STEXT_VECTOR_IS_STRIKEOUT;
+            v.decoration = (block->u.v.flags & decoration) != 0;
+            VecAppend(out.vectors, v);
+            continue;
+        }
+        if (block->type != FZ_STEXT_BLOCK_TEXT) {
+            continue;
+        }
+        for (fz_stext_line* line = block->u.t.first_line; line; line = line->next) {
+            ExtractLayoutWords(b, line, srcLines, srcLine++);
+        }
+    }
+    GroupLayoutLines(out, srcLines);
+    GroupLayoutBlocks(out);
+}
+
+// Words, lines, blocks and images of a page, as pdfalto sees them, for GROBID.
+// False for non-mupdf engines or when the page can't be loaded.
+bool ExtractPageLayout(EngineBase* engine, int pageNo, PageTextLayout& out) {
+    EngineMupdf* e = AsEngineMupdf(engine);
+    if (!e) {
+        return false;
+    }
+    if (!out.arena) {
+        out.arena = GetTempArena();
+    }
+    ScopedRecursiveMutex pagesScope(&e->pagesLock);
+    ScopedMutex renderScope(&e->renderLock);
+    FzPageInfo* pageInfo = GetFzPageInfoLocked(e, e->LocationFromPageNo(pageNo), true, nullptr);
+    if (!pageInfo || !pageInfo->page) {
+        return false;
+    }
+    ScopedRecursiveMutex docScope(&e->docLock);
+    auto* ctx = e->Ctx();
+
+    // pdfalto keeps hyphens (no DEHYPHENATE) and drops clipped text (-discardClippedText)
+    fz_stext_options opts{};
+    opts.flags = FZ_STEXT_PRESERVE_IMAGES | FZ_STEXT_COLLECT_VECTORS | FZ_STEXT_LAZY_VECTORS | FZ_STEXT_CLIP;
+    fz_stext_page* stext = nullptr;
+    fz_var(stext);
+    fz_try(ctx) {
+        stext = NewStextPage(ctx, pageInfo->page, &opts, nullptr, StextRun::WholePage);
+    }
+    fz_catch(ctx) {
+        fz_report_error(ctx);
+    }
+    if (!stext) {
+        return false;
+    }
+
+    Vec<LayoutFontFlags> fontFlags;
+    pdf_page* pdfpage = e->pdfdoc ? pdf_page_from_fz_page(ctx, pageInfo->page) : nullptr;
+    if (pdfpage) {
+        Vec<pdf_obj*> seen;
+        fz_try(ctx) {
+            pdf_obj* res = pdf_dict_get_inheritable(ctx, pdfpage->obj, PDF_NAME(Resources));
+            CollectLayoutFontFlags(ctx, e->pdfdoc, res, fontFlags, seen, 0);
+        }
+        fz_catch(ctx) {
+            fz_ignore_error(ctx);
+        }
+    }
+
+    BuildPageLayout(stext, fontFlags, out);
+    fz_drop_stext_page(ctx, stext);
     return true;
 }
 

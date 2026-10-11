@@ -11,9 +11,11 @@ export async function testit(): Promise<void> {
     "References",
     "[1] A. Author. Canonical research title. A much longer journal and publisher description. doi:10.1000/canonical.",
     "[2] M. Agrawal, N. Kayal, N. Saxena, PRIMES is in P, Ann. of Math., 2004.",
-    "[3] De Leon M. & Lainz Valcazar M. Singular Lagrangians and precontact Hamilto- nian systems. International Journal of Geometric Methods in Modern Physics, 16 : 1950158, 2019.",
+    "[3] De Leon M. & Lainz Valcazar M. Singular Lagrangians and precontact Hamilto-",
+    "nian systems. International Journal of Geometric Methods in Modern Physics, 16 : 1950158, 2019.",
   ];
-  const content = "BT /F1 12 Tf 30 730 Td " + lines.map((s, i) => `${i ? "0 -20 Td " : ""}(${s}) Tj`).join(" ") + " ET";
+  // 10pt keeps every line inside the page: GROBID drops text past the page edge
+  const content = "BT /F1 10 Tf 30 730 Td " + lines.map((s, i) => `${i ? "0 -20 Td " : ""}(${s}) Tj`).join(" ") + " ET";
   const payload = assemblePdf([
     "<< /Type /Catalog /Pages 2 0 R >>",
     "<< /Type /Pages /Count 1 /Kids [3 0 R] >>",

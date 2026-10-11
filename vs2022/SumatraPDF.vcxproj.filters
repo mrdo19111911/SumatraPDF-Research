@@ -120,6 +120,9 @@
     <ClInclude Include="..\src\Canvas.h">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\CrfModel.h">
+      <Filter>src</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\DarkMode.h">
       <Filter>src</Filter>
     </ClInclude>
@@ -130,6 +133,27 @@
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="..\src\FindWindow.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\Grobid.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\GrobidDoc.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\GrobidFulltext.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\GrobidHeader.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\GrobidReferences.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\GrobidSegmentation.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\GrobidText.h">
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="..\src\ImageSaveCropResize.h">
@@ -659,6 +683,9 @@
     <ClCompile Include="..\src\CommandPalette.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\CrfModel.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\CustomZoomDialog.cpp">
       <Filter>src</Filter>
     </ClCompile>
@@ -702,6 +729,30 @@
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="..\src\GoToPageDialog.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\Grobid.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\GrobidCitation.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\GrobidDoc.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\GrobidFulltext.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\GrobidHeader.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\GrobidReferences.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\GrobidSegmentation.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\GrobidText.cpp">
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="..\src\HomePage.cpp">

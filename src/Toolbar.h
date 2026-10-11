@@ -160,6 +160,8 @@ struct ToolbarVirt {
     int iconSize = 0;
     int rowDy = 0;
     bool vertical = false;
+    // top strip too tall for the window: groups drop their labels and frames
+    bool compact = false;
 
     // buttons with a hover drop-down, and the one currently open (if any)
     Vec<ToolbarHoverReg> hoverRegs;

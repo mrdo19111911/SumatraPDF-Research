@@ -317,7 +317,10 @@ async function readExactly(socket: Socket, len: number): Promise<Buffer> {
   const chunks: Buffer[] = [];
   let total = 0;
   while (total < len) {
-    const chunk = socket.read(len - total) as Buffer | null;
+    // Bun's read(n) returns null while fewer than n bytes are buffered yet keeps signalling
+    // 'readable', so replies over 64 KB spun forever; take what is buffered instead.
+    const want = Math.min(len - total, socket.readableLength || len - total);
+    const chunk = socket.read(want) as Buffer | null;
     if (chunk) {
       chunks.push(chunk);
       total += chunk.length;

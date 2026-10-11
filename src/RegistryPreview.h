@@ -1,14 +1,14 @@
 /* Copyright 2022 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
-#define kPdfPreviewClsid "{3D3B1846-CC43-42AE-BFF9-D914083C2BA3}"
-#define kXpsPreviewClsid "{D427A82C-6545-4FBE-8E87-030EDB3BE46D}"
-#define kDjVuPreviewClsid "{6689D0D4-1E9C-400A-8BCA-FA6C56B2C3B5}"
-#define kEpubPreviewClsid "{80C4E4B1-2B0F-40D5-95AF-BE7B57FEA4F9}"
-#define kFb2PreviewClsid "{D5878036-E863-403E-A62C-7B9C7453336A}"
-#define kMobiPreviewClsid "{42CA907E-BDF5-4A75-994A-E1AEC8A10954}"
-#define kCbxPreviewClsid "{C29D3E2B-8FF6-4033-A4E8-54221D859D74}"
-#define kTgaPreviewClsid "{CB1D63A6-FE5E-4DED-BEA5-3F6AF1A70D08}"
+#define kPdfPreviewClsid "{A651836F-6704-411A-9741-161F4626E0B0}"
+#define kXpsPreviewClsid "{00A18657-106C-4D67-89A8-F334D314EFA3}"
+#define kDjVuPreviewClsid "{97D5D6B5-97C1-4EC9-AD7E-6FF237511F21}"
+#define kEpubPreviewClsid "{759D5E7C-0D51-475E-B50E-9DB00E710438}"
+#define kFb2PreviewClsid "{F531AED7-D73B-4066-9D3B-279DB144D4C4}"
+#define kMobiPreviewClsid "{D5A460EF-399F-49C2-9755-525177F6CEC2}"
+#define kCbxPreviewClsid "{B21A8BD1-C57D-469C-BF58-65BE2CAEC680}"
+#define kTgaPreviewClsid "{B9A8466D-B640-47A1-B608-71E358CD8A05}"
 
 bool InstallPreviewDll(Str dllPath, bool allUsers);
 bool UninstallPreviewDll();
