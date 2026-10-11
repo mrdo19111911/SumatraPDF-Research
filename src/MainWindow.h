@@ -310,6 +310,7 @@ struct MainWindow { // NOLINT(clang-analyzer-optin.performance.Padding)
     DropDown* aiChatOptionCombo = nullptr; // effort / sandbox
     Checkbox* aiChatCheckbox = nullptr;    // skip permissions / always approve / skip sandbox
     VirtButton* aiChatStopBtn = nullptr;
+    VirtButton* aiChatClearBtn = nullptr;
     Edit* aiChatInput = nullptr;
     WebviewWnd* aiChatWebView = nullptr;
     bool aiChatWebViewReady = false;
@@ -482,6 +483,7 @@ struct MainWindow { // NOLINT(clang-analyzer-optin.performance.Padding)
     HwndSlot* menuSlot = nullptr;
     HwndSlot* toolbarTopSlot = nullptr;
     HwndSlot* toolbarBottomSlot = nullptr;
+    HwndSlot* toolbarRightSlot = nullptr;
     // tabs-in-titlebar caption: VirtCtrl buttons + HwndSlots for tabs/menu
     VBox* captionLayout = nullptr;
     HBox* captionRow1 = nullptr;
@@ -549,12 +551,15 @@ struct MainWindow { // NOLINT(clang-analyzer-optin.performance.Padding)
             bool tabsVisible = false;
             bool isToolbarVisible = false;
             bool isToolbarOverlay = false;
+            Size toolbarSize;
+            bool toolbarRight = false;
             bool sidebarTopVisible = false;
             bool sidebarBottomVisible = false;
             // full-window Favorites tab vs. sidebar panel: different geometry
             bool favoritesAsTab = false;
             bool showMenuBarRebar = false;
             bool aiChatVisible = false;
+            HWND paperMap = nullptr;
             int aiChatDx = 0;
             bool sidebarOnRight = false;
         };

@@ -920,7 +920,7 @@ bool LoadSettings() {
     }
 
     if (SeqStrIndexIS(gToolbarPositionNames, gprefs->toolbarPosition) < 0) {
-        str::ReplaceWithCopy(&gprefs->toolbarPosition, StrL("top"));
+        str::ReplaceWithCopy(&gprefs->toolbarPosition, StrL("auto"));
     }
 
     if (len(gprefs->treeFontName) == 0) {
@@ -1315,6 +1315,9 @@ TempStr ZoomLevelStr(float zoom) {
     if (zoom == kZoomFitHeight) {
         return Tr("Fit Height");
     }
+    if (zoom == kZoomFitContentHeight) {
+        return StrL("Fit Content Height");
+    }
     if (zoom == kZoomFitContent) {
         return Tr("Fit Content");
     }
@@ -1348,6 +1351,7 @@ static float gZoomLevels[] = {
     kZoomFitPage,
     kZoomFitWidth,
     kZoomFitHeight,
+    kZoomFitContentHeight,
     kZoomFitByOrientation,
     kZoomFitContent,
     kZoomFitVisible,
@@ -1562,7 +1566,7 @@ static const char* gEnumFullscreenDisplayMode[] = {
     "continuous", "continuous facing", "continuous book view", nullptr,
 };
 static const char* gEnumToolbar[] = {"show", "hide", "overlay", nullptr};
-static const char* gEnumToolbarPosition[] = {"top", "bottom", nullptr};
+static const char* gEnumToolbarPosition[] = {"auto", "top", "bottom", "right", nullptr};
 static const char* gEnumScrollbars[] = {"windows", "smart", "overlay", "hidden", nullptr};
 static const char* gEnumEngineeringDrawingEnhance[] = {"off", "auto", "on", nullptr};
 static const char* gEnumDocumentColorsFollowTheme[] = {"off", "smart", "legacy", nullptr};

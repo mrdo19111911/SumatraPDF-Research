@@ -637,6 +637,7 @@ const grokBuild: Field[] = [
 ];
 
 const claudeCode: Field[] = [
+  field("ExecutablePath", Str, "", "path to the Claude Code executable chosen with Browse; empty uses auto-detection"),
   field(
     "Model",
     Str,
@@ -1094,6 +1095,12 @@ const fileState: Field[] = [
     "PointF",
   ),
   field(
+    "AutoContentReading",
+    Bool,
+    false,
+    "automatically choose single/facing view and fit content height for this PDF",
+  ),
+  field(
     "PageNo",
     Str,
     "1",
@@ -1246,6 +1253,12 @@ const sessionData: Field[] = [
 ];
 
 const globalPrefs: Field[] = [
+  field("GoogleDriveClientPath", Str, null, "Desktop OAuth client JSON for browser sign-in to Google Drive"),
+  field("ZaloExecutablePath", Str, null, "optional path to Zalo PC; otherwise detected automatically"),
+  field("ResearchFfmpegPath", Str, null, "local FFmpeg executable for Vietnamese MP3 export; otherwise use PATH"),
+  field("ResearchSciHubUrl", Str, "https://sci-hub.ru/", "configurable HTTPS Sci-Hub endpoint"),
+  field("ResearchAnnaUrl", Str, "https://annas-archive.gl/", "configurable HTTPS Anna Archive website"),
+  field("ResearchAnnaApiUrl", Str, "", "optional HTTPS CrazyZard-compatible Anna API server"),
   comment(""),
   emptyLine(),
 
@@ -1434,8 +1447,8 @@ const globalPrefs: Field[] = [
   field(
     "ToolbarPosition",
     Str,
-    "top",
-    "where the toolbar is placed: top or bottom (applies to both show and overlay modes)",
+    "auto",
+    "where the toolbar is placed: auto, top, bottom or right (auto chooses top/right for the reading area)",
   ).ver("3.7"),
   field(
     "SearchUIFloating",
@@ -2039,6 +2052,12 @@ const globalPrefs: Field[] = [
 ];
 
 const globalPrefsLayout = [
+  "GoogleDriveClientPath",
+  "ZaloExecutablePath",
+  "ResearchFfmpegPath",
+  "ResearchSciHubUrl",
+  "ResearchAnnaUrl",
+  "ResearchAnnaApiUrl",
   "ZoomLevels",
   "ZoomLevelsCmdIds",
   "ExternalViewers",
@@ -2480,6 +2499,7 @@ constexpr float kZoomShrinkToFit = -4.F;
 constexpr float kZoomFitByOrientation = -5.F;
 constexpr float kZoomFitHeight = -6.F;
 constexpr float kZoomFitVisible = -7.F;
+constexpr float kZoomFitContentHeight = -8.F;
 constexpr float kZoomActualSize = 100.0F;
 constexpr float kZoomMaxDefault = 6400.F;     /* max zoom in %, unless ZoomLevels raises it */
 constexpr float kZoomMaxAllowed = 1000000.F;  /* the highest ZoomLevels can raise it to */

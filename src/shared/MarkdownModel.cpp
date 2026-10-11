@@ -494,7 +494,16 @@ Str MarkdownModel::GetDataForUrl(Str url) {
 
     Str data;
     // mermaid runtime from IDR_EMBEDDED_PAK for ```mermaid fences (see MarkdownToHtmlPage)
-    if (str::EndsWithI(plainUrl, StrL("/mermaid.min.js")) || str::EqI(plainUrl, StrL("mermaid.min.js"))) {
+    Str asset = plainUrl;
+    if (str::TrimPrefix(asset, StrL("https://sumatrapdf.markdown/_sumatra_md/"))) {
+        if (str::Contains(asset, StrL("..")) || str::ContainsChar(asset, '\\')) {
+            return {};
+        }
+        int n = 0;
+        u8* bytes = GetEmbeddedFileData(fmt("markdown/%s", asset), &n);
+        if (bytes && n > 0) data = str::Dup(Str((const char*)bytes, n));
+        free(bytes);
+    } else if (str::EndsWithI(plainUrl, StrL("/mermaid.min.js")) || str::EqI(plainUrl, StrL("mermaid.min.js"))) {
         int n = 0;
         u8* js = GetEmbeddedFileData(StrL("mermaid.min.js"), &n);
         if (js && n > 0) {

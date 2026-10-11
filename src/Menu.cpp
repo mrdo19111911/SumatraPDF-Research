@@ -218,6 +218,17 @@ static MenuDef menuDefFile[] = {
         CmdSendByEmail,
     },
     {
+        TrN("Upload to Google Drive..."),
+        CmdGoogleDrive,
+    },
+    {
+        TrN("Share with Zalo..."),
+        CmdSendToZalo,
+    },
+    { TrN("Research tools..."), CmdResearchTools },
+    { TrN("Connected Papers..."), CmdConnectedPapers },
+    { TrN("Sci-Hub..."), CmdSciHub },
+    {
         StrL(kMenuSeparator),
         0,
     },
@@ -253,6 +264,10 @@ static MenuDef menuDefView[] = {
     {
         TrN("&Single Page"),
         CmdSinglePageView,
+    },
+    {
+        TrN("Auto Content Reading"),
+        CmdAutoContentReading,
     },
     {
         TrN("&Facing"),
@@ -354,6 +369,10 @@ static MenuDef menuDefView[] = {
     {
         TrN("Claude chat"),
         CmdAIChatWithClaudeCode,
+    },
+    {
+        TrN("Clear chat"),
+        CmdClearAIChat,
     },
     {
         TrN("Grok chat"),
@@ -2062,13 +2081,16 @@ static void SetMenuStateForSelection(WindowTab* tab, HMENU menu) {
 
 static void MenuUpdateDisplayMode(MainWindow* win) {
     bool enabled = win->IsDocLoaded();
+    bool autoReading = win->CurrentTab() && win->CurrentTab()->portraitViewAuto;
     DisplayMode displayMode = gSettings->defaultDisplayModeEnum;
     if (enabled) {
         displayMode = win->ctrl->GetDisplayMode();
     }
 
     for (int id = CmdViewLayoutFirst; id <= CmdViewLayoutLast; id++) {
-        MenuSetEnabled(win->menu, id, enabled);
+        bool autoLayout =
+            id == CmdSinglePageView || id == CmdFacingView || id == CmdBookView || id == CmdToggleContinuousView;
+        MenuSetEnabled(win->menu, id, enabled && !(autoReading && autoLayout));
     }
 
     int id = 0;
@@ -2084,6 +2106,9 @@ static void MenuUpdateDisplayMode(MainWindow* win) {
 
     CheckMenuRadioItem(win->menu, CmdViewLayoutFirst, CmdViewLayoutLast, id, MF_BYCOMMAND);
     MenuSetChecked(win->menu, CmdToggleContinuousView, IsContinuous(displayMode));
+    MenuSetEnabled(win->menu, CmdAutoContentReading,
+                   win->AsFixed() && str::EqI(win->AsFixed()->GetEngine()->defaultExt, StrL(".pdf")));
+    MenuSetChecked(win->menu, CmdAutoContentReading, autoReading);
     MenuSetChecked(win->menu, CmdToggleAutomaticallyScroll, ReadingAutoScrollIsOn(win));
     MenuSetChecked(win->menu, CmdToggleReadingBar, ReadingBarIsOn(win));
     MenuSetChecked(win->menu, CmdToggleReadingBarInvert, gSettings && gSettings->readingBar.invert);

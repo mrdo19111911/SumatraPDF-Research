@@ -1,0 +1,19 @@
+Sci-Hub adapter: lookup (DOI/PMID/URL), embedded-PDF resolution and fetch flow
+adapted from https://github.com/zaytoun/scihub.py (MIT; license alongside).
+The original Python runtime is not bundled. The native adapter validates TLS,
+uses a configurable endpoint, caps response size and does not silently overwrite.
+
+Vietnamese TTS is downloaded separately, only when requested:
+- Piper Windows 2023.11.14-2: https://github.com/rhasspy/piper
+- vi_VN-vivos-x_low: https://huggingface.co/rhasspy/piper-voices/tree/main/vi/vi_VN/vivos/x_low
+  Model card: 65 speakers, 16 kHz, x_low quality; dataset CC BY-NC-SA 4.0.
+  The installer saves the model card and Piper distribution license files.
+- FFmpeg is detected on the user's computer or selected by Browse; not bundled.
+
+Connected Papers is loaded from https://www.connectedpapers.com/ in WebView2.
+Its website login and quota remain those of the service. No API key is bundled.
+
+Anna Archive search-card/detail selectors and API schema adapted from
+https://github.com/CrazyZard/annas-archive-api (MIT; Anna-API-MIT-LICENSE.txt).
+The native adapter supports website HTML or an optional compatible API server.
+The original Python server is not bundled or automatically installed.

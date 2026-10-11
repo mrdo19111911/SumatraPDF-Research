@@ -111,6 +111,10 @@ export enum ControlCommand {
   TestFrameNcStrips = 114,
   TestMergePdf = 115,
   TestWheelWhileClosing = 116,
+  TestAIChatSetup = 117,
+  TestDocumentShare = 118,
+  TestChatPaper = 119,
+  TestResearchTools = 120,
   // ng only. Orig's 101/102 are StartPerfLog/StopPerfLog; ng reused those
   // numbers, so this input command is 121 there.
   TestInput = 121,

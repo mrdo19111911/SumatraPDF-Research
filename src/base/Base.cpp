@@ -3037,6 +3037,7 @@ static SeqStrings gMimeTypes =
     ".ico\0image/vnd.microsoft.icon\0"
     ".css\0text/css\0"
     ".js\0text/javascript\0"
+    ".woff2\0font/woff2\0"
     ".svg\0image/svg+xml\0"
     ".txt\0text/plain\0"
     ".md\0text/plain\0"

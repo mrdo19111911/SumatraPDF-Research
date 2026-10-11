@@ -25,7 +25,10 @@ void DestroyAIChatPanel(MainWindow* win);
 void ShutdownAIChatForMainWindow(MainWindow* win);
 
 void OnAIChatToggle(MainWindow* win, int providerId);
+bool AIChatConfigureClaude(MainWindow* win);
 void OnAIChatTabChanged(MainWindow* win);
+void ClearAIChat(MainWindow* win);
+TempStr TestChatPaperTemp(MainWindow* win, Str action, Str text);
 void UpdateAIChatTheme(MainWindow* win);
 void UpdateAIChatDpi(MainWindow* win, int dpi);
 void RelayoutAIChatPanel(MainWindow* win);

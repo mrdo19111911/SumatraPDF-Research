@@ -19,13 +19,16 @@ import { cmdId, EXE, runStandalone, tmpPath, assemblePdf } from "./util.ts";
 
 type Button = { visible: boolean; idx: number };
 
-// the standard toolbar written out as a layout; sumatra-website/www/docs/Customize-toolbar.md
-// gives users this string as the starting point for their own
+// The researcher toolbar written out as a custom layout.
 const DEFAULT_LAYOUT =
-  "CmdOpenFile CmdPrint | PageInfo CmdGoToPrevPage CmdGoToNextPage | " +
-  "CmdNavigateBack CmdNavigateForward | CmdToggleReadAloud | " +
+  "CmdOpenFile CmdPrint PageInfo CmdGoToPrevPage CmdGoToNextPage " +
+  "CmdNavigateBack CmdNavigateForward CmdFindFirst CmdAutoContentReading " +
+  "CmdToggleReadingDarkMode CmdDecreaseTextSize CmdIncreaseTextSize CmdToggleReadAloud " +
   "CmdZoomFitWidthAndContinuous CmdZoomFitPageAndSinglePage CmdRotateLeft CmdRotateRight " +
-  "CmdZoomOut CmdZoomIn | CmdFindFirst | CmdToggleEditPDF";
+  "CmdZoomOut CmdZoomIn CmdAIChatWithClaudeCode CmdPaperMap CmdClearAIChat CmdResearchAsk CmdResearchSelection " +
+  "CmdResearchSymbols CmdResearchCompare CmdResearchVersions CmdResearchFigure CmdResearchReading " +
+  "CmdResearchNarration CmdResearchExportMp3 CmdResearchTools CmdResearchExportText CmdConnectedPapers " +
+  "CmdArxivSearch CmdCollectPapers CmdSciHub CmdGoogleDrive CmdSendToZalo CmdToggleEditPDF";
 
 function makePdf(): string {
   const objs = [

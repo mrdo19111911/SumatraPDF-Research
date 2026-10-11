@@ -43,3 +43,10 @@ tests/tmp/
 /mcps/tasks/tools
 /bin/resvg.exe
 /scratch.txt
+
+# Local releases, document corpora and user research output
+/SumatraPDF-auto-content-*/
+/SumatraPDF-*.zip
+/research/*/
+/research/__pycache__/
+*.pyc

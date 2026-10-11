@@ -6559,7 +6559,123 @@ static fz_device* FzNewContentBBoxDevice(fz_context* ctx, fz_rect* result, fz_re
     return &d->super;
 }
 
+// Sparse first/last ink bands are excluded from the reading viewport, without OCR.
+static fz_rect SparseMarginContentBox(fz_context* ctx, fz_display_list* list, fz_rect pageRect, fz_rect* readingClip) {
+    *readingClip = pageRect;
+    constexpr float kMarginDensity = 0.02f;
+    constexpr int kDarkPixelLevel = 160;
+    constexpr int kVisiblePixelLevel = 250;
+    constexpr int kBandGapPixels = 2;
+    constexpr float kMaxRasterSide = 2048;
+    float scale = std::min(1.0f, kMaxRasterSide / std::max(pageRect.x1 - pageRect.x0, pageRect.y1 - pageRect.y0));
+    fz_matrix matrix = fz_scale(scale, scale);
+    fz_rect rasterRect = fz_transform_rect(pageRect, matrix);
+    fz_pixmap* pix = nullptr;
+    fz_device* dev = nullptr;
+    fz_var(pix);
+    fz_var(dev);
+    fz_try(ctx) {
+        pix = fz_new_pixmap_with_bbox(ctx, fz_device_rgb(ctx), fz_round_rect(rasterRect), nullptr, 0);
+        fz_clear_pixmap_with_value(ctx, pix, 255);
+        dev = fz_new_draw_device(ctx, fz_identity, pix);
+        fz_run_display_list(ctx, list, dev, matrix, rasterRect, nullptr);
+        fz_close_device(ctx, dev);
+    }
+    fz_always(ctx) {
+        fz_drop_device(ctx, dev);
+    }
+    fz_catch(ctx) {
+        fz_drop_pixmap(ctx, pix);
+        fz_rethrow(ctx);
+    }
+    defer {
+        fz_drop_pixmap(ctx, pix);
+    };
+    int width = fz_pixmap_width(ctx, pix);
+    int height = fz_pixmap_height(ctx, pix);
+    int n = fz_pixmap_components(ctx, pix);
+    int stride = pix->stride;
+    if (width <= 0 || height <= 0 || n < 3) {
+        return fz_empty_rect;
+    }
+    int* rows = (int*)calloc((size_t)height, sizeof(int));
+    int* visibleRows = (int*)calloc((size_t)height, sizeof(int));
+    defer {
+        free(rows);
+        free(visibleRows);
+    };
+    if (!rows || !visibleRows) {
+        return fz_empty_rect;
+    }
+    const u8* samples = fz_pixmap_samples(ctx, pix);
+    for (int y = 0; y < height; y++) {
+        const u8* p = samples + y * stride;
+        for (int x = 0; x < width; x++, p += n) {
+            int luminance = (54 * p[0] + 183 * p[1] + 19 * p[2]) / 256;
+            rows[y] += luminance < kDarkPixelLevel;
+            visibleRows[y] += luminance < kVisiblePixelLevel;
+        }
+    }
+    auto bandCutoff = [&](int start, int step) {
+        int y = start;
+        while (y >= 0 && y < height && !visibleRows[y]) y += step;
+        if (y < 0 || y >= height) return start;
+        int firstInk = y, lastInk = y, emptyRows = 0, ink = 0;
+        constexpr float kEdgeBandFraction = 0.08f;
+        if ((step > 0 && firstInk > height * kEdgeBandFraction) ||
+            (step < 0 && firstInk < height * (1 - kEdgeBandFraction)))
+            return start;
+        for (; y >= 0 && y < height; y += step) {
+            if (!visibleRows[y]) {
+                if (++emptyRows >= kBandGapPixels) break;
+            } else {
+                emptyRows = 0;
+                lastInk = y;
+                ink += rows[y];
+            }
+        }
+        float density = (float)ink / ((float)width * (abs(lastInk - firstInk) + 1));
+        while (y >= 0 && y < height && !visibleRows[y]) y += step;
+        constexpr float kMinBandGap = 12;
+        if (density >= kMarginDensity || y < 0 || y >= height || abs(y - lastInk) < kMinBandGap * scale) return start;
+        return (lastInk + y) / 2;
+    };
+    int keepTop = bandCutoff(0, 1);
+    int keepBottom = bandCutoff(height - 1, -1);
+    if (keepTop > keepBottom) {
+        return fz_empty_rect;
+    }
+    *readingClip = fz_intersect_rect(
+        pageRect, {pageRect.x0, (pix->y + keepTop) / scale, pageRect.x1, (pix->y + keepBottom + 1) / scale});
+    int left = width, right = -1, first = height, last = -1;
+    for (int y = keepTop; y <= keepBottom; y++) {
+        const u8* p = samples + y * stride;
+        for (int x = 0; x < width; x++, p += n) {
+            int luminance = (54 * p[0] + 183 * p[1] + 19 * p[2]) / 256;
+            if (luminance < kVisiblePixelLevel) {
+                first = std::min(first, y);
+                last = y;
+                left = std::min(left, x);
+                right = std::max(right, x);
+            }
+        }
+    }
+    if (right < left || last < first) {
+        return fz_empty_rect;
+    }
+    return {(pix->x + left) / scale, (pix->y + first) / scale, (pix->x + right + 1) / scale,
+            (pix->y + last + 1) / scale};
+}
+
 RectF EngineMupdf::PageContentBox(int pageNo, RenderTarget /*target*/) {
+    return ContentBox(pageNo, ContentBounds::All);
+}
+
+RectF EngineMupdf::PageReadingContentBox(int pageNo) {
+    return ContentBox(pageNo, ContentBounds::Reading);
+}
+
+RectF EngineMupdf::ContentBox(int pageNo, ContentBounds bounds) {
     auto* ctx = Ctx();
 
     FzPageInfo* pageInfo = GetFzPageInfo(pageNo, false);
@@ -6596,6 +6712,24 @@ RectF EngineMupdf::PageContentBox(int pageNo, RenderTarget /*target*/) {
         dev = FzNewContentBBoxDevice(ctx, &rect, pagerect);
         fz_run_display_list(ctx, keptList, dev, fz_identity, pagerect, &fzcookie);
         fz_close_device(ctx, dev);
+        if (bounds == ContentBounds::Reading) {
+            fz_rect clip;
+            fz_rect trimmed = SparseMarginContentBox(ctx, keptList, pagerect, &clip);
+            if (!fz_is_empty_rect(trimmed)) {
+                fz_drop_device(ctx, dev);
+                dev = nullptr;
+                fz_rect bodyRect = fz_empty_rect;
+                dev = FzNewContentBBoxDevice(ctx, &bodyRect, clip);
+                fz_run_display_list(ctx, keptList, dev, fz_identity, clip, &fzcookie);
+                fz_close_device(ctx, dev);
+                rect = fz_union_rect(trimmed, bodyRect);
+                constexpr float kReadingSafetyPad = 1.5f;
+                rect.x0 -= kReadingSafetyPad;
+                rect.x1 += kReadingSafetyPad;
+                rect.y0 -= kReadingSafetyPad;
+                rect.y1 += kReadingSafetyPad;
+            }
+        }
     }
     fz_always(ctx) {
         fz_drop_device(ctx, dev);

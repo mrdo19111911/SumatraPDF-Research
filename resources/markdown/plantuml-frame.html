@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script src="viz-global.js"></script>
+  </head>
+  <body>
+    <script type="module">
+      import { renderToString } from "./plantuml.js";
+      window.PLANTUML_STDLIB_BASE = new URL("./", location.href).href;
+      window.addEventListener("message", (event) => {
+        if (event.origin !== location.origin || event.source !== parent || event.data.type !== "plantuml-render")
+          return;
+        const { id, source } = event.data;
+        try {
+          renderToString(
+            source.split(/\r?\n/),
+            (svg) => parent.postMessage({ id, svg }, location.origin),
+            (error) => parent.postMessage({ id, error: String(error) }, location.origin),
+          );
+        } catch (error) {
+          parent.postMessage({ id, error: String(error) }, location.origin);
+        }
+      });
+      parent.postMessage({ type: "plantuml-ready" }, location.origin);
+    </script>
+  </body>
+</html>

@@ -52,6 +52,7 @@ void CollectFacingRows(Vec<FacingRow>& out, int pageCount, bool bookView, const 
 Size FreePanSlack(Size viewPort);
 
 struct DocumentLayout {
+    bool readingFrames = false;
     Vec<DocumentLayoutPage> pages;
     DocumentLayoutParams params;
     Size canvasSize;

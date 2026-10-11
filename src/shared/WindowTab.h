@@ -55,12 +55,16 @@ struct AIChatTabState {
     Str sessionId;
     str::Builder chatLog;
     void* process = nullptr;
+    u64 requestId = 0;
 };
 
 /* Data related to a single document loaded into a tab/window */
 /* (none of these depend on MainWindow, so that a WindowTab could
    be moved between windows once this is supported) */
 struct WindowTab {
+    bool portraitViewOnOpenPending = false;
+    bool portraitViewAuto = false;
+    bool updatingPortraitView = false;
     enum class LoadState {
         None,
         Loading,
@@ -118,6 +122,8 @@ struct WindowTab {
     // per-provider AI chat state, indexed by AIChatBackend
     // (0 = Claude, 1 = Grok, 2 = Codex, 3 = AntiGravity)
     AIChatTabState aiChat[4];
+    StrVec researchSources;
+    u64 researchGeneration = 0;
     Type type = Type::None;
     LoadState loadState = LoadState::None;
     // previous View settings, needed when unchecking the Fit Width/Page toolbar buttons

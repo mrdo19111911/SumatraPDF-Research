@@ -52,6 +52,9 @@
 #include "SvgIcons.h"
 #include "Theme.h"
 #include "ReadAloud.h"
+#include "PdfDarkMode.h"
+#include "AIChatCommon.h"
+#include "ResearchTools.h"
 #include "Toolbar.h"
 
 // https://docs.microsoft.com/en-us/windows/win32/controls/toolbar-control-reference
@@ -60,6 +63,92 @@ constexpr int kButtonSpacingX = 4;
 
 // distance between label and edit field
 constexpr int kTextPaddingRight = 6;
+
+enum class ToolbarSection {
+    File,
+    Pages,
+    View,
+    AI,
+    Papers,
+    Share,
+    Markup,
+    Tools
+};
+
+static ToolbarSection ToolbarSectionFor(int cmd) {
+    switch (cmd) {
+        case CmdOpenFile:
+        case CmdPrint:
+            return ToolbarSection::File;
+        case PageInfoId:
+        case CmdGoToPrevPage:
+        case CmdGoToNextPage:
+        case CmdNavigateBack:
+        case CmdNavigateForward:
+        case CmdFindFirst:
+            return ToolbarSection::Pages;
+        case CmdAutoContentReading:
+        case CmdToggleReadingDarkMode:
+        case CmdDecreaseTextSize:
+        case CmdIncreaseTextSize:
+        case CmdToggleReadAloud:
+        case CmdZoomFitWidthAndContinuous:
+        case CmdZoomFitPageAndSinglePage:
+        case CmdRotateLeft:
+        case CmdRotateRight:
+        case CmdZoomOut:
+        case CmdZoomIn:
+            return ToolbarSection::View;
+        case CmdAIChatWithClaudeCode:
+        case CmdClearAIChat:
+        case CmdResearchAsk:
+        case CmdPaperMap:
+        case CmdResearchSelection:
+        case CmdResearchSymbols:
+        case CmdResearchCompare:
+        case CmdResearchVersions:
+        case CmdResearchFigure:
+        case CmdResearchReading:
+        case CmdResearchNarration:
+        case CmdResearchExportMp3:
+        case CmdResearchTools:
+            return ToolbarSection::AI;
+        case CmdResearchExportText:
+        case CmdConnectedPapers:
+        case CmdArxivSearch:
+        case CmdCollectPapers:
+        case CmdSciHub:
+            return ToolbarSection::Papers;
+        case CmdGoogleDrive:
+        case CmdSendToZalo:
+            return ToolbarSection::Share;
+        case CmdToggleEditPDF:
+            return ToolbarSection::Markup;
+        default:
+            return ToolbarSection::Tools;
+    }
+}
+
+static Str ToolbarSectionName(ToolbarSection section) {
+    switch (section) {
+        case ToolbarSection::File:
+            return StrL("File");
+        case ToolbarSection::Pages:
+            return StrL("Pages");
+        case ToolbarSection::View:
+            return StrL("View");
+        case ToolbarSection::AI:
+            return StrL("AI");
+        case ToolbarSection::Papers:
+            return StrL("Papers");
+        case ToolbarSection::Share:
+            return StrL("Share");
+        case ToolbarSection::Markup:
+            return StrL("Markup");
+        default:
+            return StrL("Tools");
+    }
+}
 
 struct ToolbarButtonInfo {
     const char* icon = nullptr; // gIcon*, or null for a separator / page box / text
@@ -72,25 +161,43 @@ struct ToolbarButtonInfo {
 static ToolbarButtonInfo gToolbarButtons[] = {
     {gIconFileOpen, CmdOpenFile, TrN("Open")},
     {gIconPrint, CmdPrint, TrN("Print")},
-    {nullptr, 0, {}},          // separator
-    {nullptr, PageInfoId, {}}, // text box for page number + show current page / no of pages
+    {nullptr, PageInfoId, {}},
     {gIconPagePrev, CmdGoToPrevPage, TrN("Previous Page")},
     {gIconPageNext, CmdGoToNextPage, TrN("Next Page")},
-    {nullptr, 0, {}}, // separator
     {gIconNavigateBack, CmdNavigateBack, TrN("Back")},
     {gIconNavigateForward, CmdNavigateForward, TrN("Forward")},
-    {nullptr, 0, {}}, // separator
+    {gIconSearch, CmdFindFirst, TrN("Find")},
+    {nullptr, CmdAutoContentReading, StrL("AUTO"), {}, true},
+    {gIconReadingDark, CmdToggleReadingDarkMode, StrL("Toggle dark reading: interface and document")},
+    {gIconTextSmaller, CmdDecreaseTextSize, StrL("Smaller text (reflowable documents; not page zoom)")},
+    {gIconTextLarger, CmdIncreaseTextSize, StrL("Larger text (reflowable documents; not page zoom)")},
     {gIconSpeak, CmdToggleReadAloud, TrN("Read Aloud")},
-    {nullptr, 0, {}}, // separator
     {gIconLayoutContinuous, CmdZoomFitWidthAndContinuous, TrN("Fit Width and Show Pages Continuously")},
     {gIconLayoutSinglePage, CmdZoomFitPageAndSinglePage, TrN("Fit a Single Page")},
     {gIconRotateLeft, CmdRotateLeft, TrN("Rotate &Left")},
     {gIconRotateRight, CmdRotateRight, TrN("Rotate &Right")},
     {gIconZoomOut, CmdZoomOut, TrN("Zoom Out")},
     {gIconZoomIn, CmdZoomIn, TrN("Zoom In")},
-    {nullptr, 0, {}}, // separator
-    {gIconSearch, CmdFindFirst, TrN("Find")},
-    {nullptr, 0, {}}, // separator
+    {gIconPaperChat, CmdAIChatWithClaudeCode, StrL("Chat with this paper")},
+    {nullptr, CmdPaperMap, StrL("KG"), {}, true},
+    {gIconTrash, CmdClearAIChat, StrL("Clear chat for this paper")},
+    {gIconSourceAnswer, CmdResearchAsk, StrL("Answer with clickable PDF sources")},
+    {gIconProofExplain, CmdResearchSelection, StrL("Explain selected passage and proof assumptions")},
+    {gIconSymbolIndex, CmdResearchSymbols, StrL("Symbol index: definitions, occurrences and conflicts")},
+    {gIconPaperCompare, CmdResearchCompare, StrL("Compare this paper with other PDFs")},
+    {gIconVersionCompare, CmdResearchVersions, StrL("Compare two paper versions")},
+    {gIconFigureExplain, CmdResearchFigure, StrL("Explain selected figure or table (or current page)")},
+    {gIconReadingView, CmdResearchReading, StrL("AI reading view with adjustable text and original pages")},
+    {gIconNarration, CmdResearchNarration, StrL("Create Vietnamese narration")},
+    {gIconMp3Export, CmdResearchExportMp3, StrL("Export Vietnamese MP3 from reviewed text")},
+    {gIconResearchTools, CmdResearchTools, StrL("Research setup and more tools")},
+    {gIconPaperText, CmdResearchExportText, StrL("Export all paper text")},
+    {gIconConnectedPapers, CmdConnectedPapers, StrL("Connected Papers")},
+    {gIconArxivSearch, CmdArxivSearch, StrL("Search arXiv papers and open PDFs")},
+    {gIconCollectPapers, CmdCollectPapers, StrL("Collect all papers cited in references")},
+    {gIconSciHub, CmdSciHub, StrL("Find a PDF with Sci-Hub")},
+    {gIconDriveUpload, CmdGoogleDrive, StrL("Upload to Google Drive")},
+    {gIconZaloShare, CmdSendToZalo, StrL("Share with Zalo")},
     {gIconEditAnnotations, CmdToggleEditPDF, TrN("Edit PDF")},
 };
 // unicode chars: https://www.compart.com/en/unicode/U+25BC
@@ -669,7 +776,48 @@ void ToolbarUpdateStateForWindow(MainWindow* win, bool setButtonsVisibility) {
             continue;
         }
         bool isEnabled = IsCmdEnabled(win, cmdId, ctx);
+        WindowTab* tab = win->CurrentTab();
+        bool reading = tab && tab->portraitViewAuto;
+        if (reading && (cmdId == CmdZoomFitWidthAndContinuous || cmdId == CmdZoomFitPageAndSinglePage)) {
+            isEnabled = false;
+        }
         SetToolbarButtonEnabledByIdx(win, i, isEnabled);
+        if (cmdId == CmdAutoContentReading) {
+            VirtCtrl* button = ToolbarItemAt(win, i);
+            button->SetColor(kColBtnText, reading ? MkRgb(0, 85, 175) : MkRgb(72, 72, 72));
+            button->SetTooltip(reading ? StrL("AUTO: on - click to turn off") : StrL("AUTO: off - click to turn on"));
+            button->Invalidate();
+        }
+        if (cmdId == CmdGoogleDrive || cmdId == CmdSendToZalo) {
+            ToolbarItemAt(win, i)->SetTooltip(
+                cmdId == CmdGoogleDrive ? StrL("Upload the saved document to Google Drive (browser sign-in)")
+                                        : StrL("Copy the document for Zalo: choose a chat, Ctrl+V, then send"));
+        }
+        if (cmdId == CmdIncreaseTextSize || cmdId == CmdDecreaseTextSize) {
+            Str tip = cmdId == CmdIncreaseTextSize ? StrL("Larger text") : StrL("Smaller text");
+            ToolbarItemAt(win, i)->SetTooltip(ctx->isReflowable
+                                                  ? tip
+                                                  : StrL("Text size needs a reflowable document. PDF Reading mode is "
+                                                         "not available yet; this is not page zoom."));
+        }
+        if (cmdId == CmdToggleReadingDarkMode) {
+            bool dark = !IsLightColor(ThemeWindowBackgroundColor());
+            SetToolbarButtonCheckedState(win, cmdId, dark);
+            ToolbarItemAt(win, i)->SetTooltip(dark ? StrL("Dark reading on - click for light")
+                                                   : StrL("Dark reading off - click for dark"));
+        }
+        if (cmdId == CmdAIChatWithClaudeCode) {
+            SetToolbarButtonCheckedState(
+                win, cmdId,
+                !PaperMapHwnd(win) && win->uiState.aiChatVisible && win->aiChatProvider == (int)AIChatBackend::Claude);
+        }
+        if (cmdId == CmdPaperMap) {
+            bool open = PaperMapHwnd(win) != nullptr;
+            VirtCtrl* button = ToolbarItemAt(win, i);
+            button->SetColor(kColBtnText, open ? ThemeWindowLinkColor() : TbTextColor());
+            button->SetTooltip(open ? StrL("KG: hide paper knowledge map") : StrL("KG: open paper knowledge map"));
+            button->Invalidate();
+        }
 
         if (cmdId == CmdToggleReadAloud || cmdId == CmdPauseReadAloud) {
             bool speaking = TtsIsSpeaking();
@@ -906,6 +1054,10 @@ static int OverlayToolbarBottomScrollbarOffset() {
 // rectangle (frame-client coords) the overlay toolbar occupies when shown
 static Rect OverlayToolbarRect(MainWindow* win) {
     Rect canvas = ToolbarCanvasRectInFrame(win);
+    if (win->toolbarVirt->vertical) {
+        Size s = ToolbarHost(win)->ScreenRect().Size();
+        return {canvas.x + canvas.dx - s.dx, canvas.y, s.dx, std::min(s.dy, canvas.dy)};
+    }
     int natW = ToolbarNaturalWidth(win);
     if (natW <= 0 || natW > canvas.dx) {
         natW = canvas.dx;
@@ -944,7 +1096,8 @@ static bool OverlayToolbarShouldShowForCursor(MainWindow* win) {
     Rect canvas = ToolbarCanvasRectInFrame(win);
     int my = DpiScale(16);
     int bandY = ToolbarAtBottom() ? (tb.y - my) : tb.y;
-    Rect band(canvas.x, bandY, canvas.dx, tb.dy + my);
+    Rect band = win->toolbarVirt->vertical ? Rect{tb.x - my, canvas.y, tb.dx + my, canvas.dy}
+                                           : Rect{canvas.x, bandY, canvas.dx, tb.dy + my};
     bool inBand = band.Contains(Point(ptFrame.x, ptFrame.y));
 
     // also keep shown while the cursor is over the toolbar window itself
@@ -1121,7 +1274,9 @@ void UpdateToolbarPageText(MainWindow* win, int pageCount, bool updateOnly) {
 
     bool hasChapters = ShowChapterUi(win->ctrl);
     if (tb->pageLabel) {
-        tb->pageLabel->SetText(hasChapters ? Tr("Chapter:") : Tr("Page:"));
+        tb->pageLabel->SetText(hasChapters ? Tr("Chapter:") : StrL(""));
+        int gap = hasChapters ? DpiScale(kTextPaddingRight) + DpiScale(kButtonSpacingX) : 0;
+        tb->pageLabel->padding = {0, gap, 0, hasChapters ? DpiScale(4) : 0};
     }
     Visibility chapterVis = hasChapters ? Visibility::Visible : Visibility::Collapse;
     bool chapterVisChanged = false;
@@ -1348,6 +1503,13 @@ static void RefreshToolbarIcons(MainWindow* win) {
 
 void UpdateToolbarAfterThemeChange(MainWindow* win) {
     RefreshToolbarIcons(win);
+    if (win->toolbarVirt) {
+        for (const auto& group : win->toolbarVirt->groups) {
+            auto* label = AsVirtText(group.layout->LayoutChildAt(0));
+            if (label) label->SetColor(kColText, TbTextColor());
+        }
+    }
+    ToolbarUpdateStateForWindow(win, false);
     VirtHost* host = ToolbarHost(win);
     if (host) {
         host->bgColor = TbBgColor();
@@ -1425,6 +1587,8 @@ TempStr ToolbarButtonsResultTemp(int* exitCodeOut) {
     }
     ToolbarVirt* tb = win->toolbarVirt;
     int n = tb ? len(tb->items) : 0;
+    out.Append(fmt("reading-dark=%d colors=%s text-size=%g\n", !IsLightColor(ThemeWindowBackgroundColor()),
+                   gSettings->documentColorsFollowTheme, EbookTextSize(win)));
     int nTools = 0;
     for (int i = 0; i < n; i++) {
         if (tb->items[i] && tb->items[i]->tooltip) {
@@ -1432,6 +1596,9 @@ TempStr ToolbarButtonsResultTemp(int* exitCodeOut) {
         }
     }
     out.Append(fmt("buttons=%d tooltipTools=%d\n", n, nTools));
+    Rect hostRect = tb->host->ScreenRect();
+    Str orientation = tb->vertical ? StrL("right") : ToolbarAtBottom() ? StrL("bottom") : StrL("top");
+    out.Append(fmt("orientation=%s host=%d,%d,%d,%d\n", orientation, hostRect.x, hostRect.y, hostRect.dx, hostRect.dy));
     int toolIdx = 0;
     for (int i = 0; i < n; i++) {
         VirtCtrl* w = tb->items[i];
@@ -1449,10 +1616,17 @@ TempStr ToolbarButtonsResultTemp(int* exitCodeOut) {
         }
         out.Append(fmt("idx=%d cmd=%d hidden=%d rect=%d,%d,%d,%d text=%s\n", i, w ? w->id : 0, hidden ? 1 : 0, r.x, r.y,
                        r.x + r.dx, r.y + r.dy, text));
+        out.Append(fmt("state-cmd=%d icon=%d enabled=%d group=%s\n", w ? w->id : 0, w && AsVirtIconButton(w) ? 1 : 0,
+                       w && w->IsEnabled() ? 1 : 0, ToolbarSectionName(ToolbarSectionFor(w ? w->id : 0))));
         if (w && w->tooltip) {
             out.Append(fmt("tool=%d uid=%d rect=%d,%d,%d,%d\n", toolIdx, w->id, r.x, r.y, r.x + r.dx, r.y + r.dy));
             toolIdx++;
         }
+    }
+    for (const auto& group : tb->groups) {
+        if (IsCollapsed(group.layout)) continue;
+        Rect r = group.layout->lastBounds;
+        out.Append(fmt("group=%s rect=%d,%d,%d,%d\n", group.name, r.x, r.y, r.Right(), r.Bottom()));
     }
     int nAnnotations = len(tb->annotationItems);
     bool annotationsVisible = tb->annotationRow && tb->annotationRow->GetVisibility() == Visibility::Visible;
@@ -2060,6 +2234,7 @@ static void OpenHoverDropdown(MainWindow* win, int cmdId) {
         x = anchor.x + ((anchor.dx - sz.dx) / 2);
     }
     Rect r{x, anchor.Bottom(), sz.dx, sz.dy};
+    if (tb->vertical) r = {anchor.x - sz.dx, anchor.y, sz.dx, sz.dy};
     r = ShiftRectToWorkArea(r, win->hwndFrame, true);
 
     // Live before the show. SetWindowPos can deliver a mouse move; gInOpenHover
@@ -3237,6 +3412,7 @@ static void ShowAnnotPopupHost(AnnotColorPopup* p, ILayout* layout, Rect anchor)
 
     // under the chip, centered on it, kept on the monitor
     Rect r{anchor.x + ((anchor.dx - sz.dx) / 2), anchor.Bottom(), sz.dx, sz.dy};
+    if (win->toolbarVirt && win->toolbarVirt->vertical) r = {anchor.x - sz.dx, anchor.y, sz.dx, sz.dy};
     r = ShiftRectToWorkArea(r, win->hwndFrame, true);
     host->SetPos(r, true);
     gAnnotColorPopup = p;
@@ -3282,6 +3458,10 @@ static void OnToolbarMouseLeave(MainWindow* win) {
 static void PaintToolbarSeparator(VirtCustom*, VirtPaintCtx* ctx) {
     Rect r = ctx->bounds;
     int inset = DpiScale(6);
+    if (r.dx > r.dy) {
+        ctx->gfx->FillRect({r.x + inset, r.y + r.dy / 2, std::max(0, r.dx - 2 * inset), 1}, ThemeEdgeColor());
+        return;
+    }
     int dy = r.dy - (2 * inset);
     if (dy <= 0) {
         return;
@@ -3290,12 +3470,231 @@ static void PaintToolbarSeparator(VirtCustom*, VirtPaintCtx* ctx) {
     ctx->gfx->FillRect({x, r.y + inset, 1, dy}, ThemeEdgeColor());
 }
 
-static VirtCtrl* MakeToolbarSeparator(int rowDy) {
+static Kind kToolbarSeparator = "toolbarSeparator";
+static Kind kToolbarGroup = "toolbarGroup";
+
+enum class ToolbarAxis {
+    Adaptive,
+    Horizontal
+};
+
+static VirtCtrl* MakeToolbarSeparator(int rowDy, bool vertical) {
     auto* sep = new VirtCustom();
-    sep->idealSize = {DpiScale(8), rowDy};
+    sep->kind = kToolbarSeparator;
+    sep->idealSize = vertical ? Size{rowDy, DpiScale(8)} : Size{DpiScale(8), rowDy};
     sep->onPaint = MkFunc1(PaintToolbarSeparator, sep);
     sep->SetFlag(vwfNoHitTest, true);
     return sep;
+}
+
+// Retain the controls (and keyboard focus) while rotating the strip. A short
+// vertical strip wraps into another column instead of losing its last buttons.
+struct ToolbarFlow : ILayout {
+    ToolbarVirt* tb;
+    bool wrap;
+    ToolbarAxis axis;
+    Vec<ILayout*> children;
+    Vec<Rect> positions;
+
+    ToolbarFlow(ToolbarVirt* owner, bool allowWrap, ToolbarAxis direction = ToolbarAxis::Adaptive)
+        : tb(owner), wrap(allowWrap), axis(direction) {}
+    ~ToolbarFlow() override {
+        for (auto* child : children) delete child;
+    }
+    void AddChild(ILayout* child) { VecAppend(children, child); }
+    int LayoutChildCount() override { return len(children); }
+    ILayout* LayoutChildAt(int i) override { return children[i]; }
+    Size Layout(Constraints bc) override {
+        VecResize(positions, len(children));
+        int x = 0, y = 0, columnWidth = 0, height = 0, rowHeight = 0, width = 0;
+        int columnStart = 0;
+        int rowStart = 0;
+        int gap = DpiScale(2);
+        bool vertical = axis == ToolbarAxis::Adaptive && tb->vertical;
+        auto centerColumn = [&](int end) {
+            for (int j = columnStart; j < end; j++) {
+                if (!IsCollapsed(children[j])) positions[j].x += (columnWidth - positions[j].dx) / 2;
+            }
+        };
+        auto centerRow = [&](int end) {
+            for (int j = rowStart; j < end; j++) {
+                if (!IsCollapsed(children[j])) positions[j].y += (rowHeight - positions[j].dy) / 2;
+            }
+        };
+        for (int i = 0; i < len(children); i++) {
+            auto* child = children[i];
+            positions[i] = {};
+            if (IsCollapsed(child)) continue;
+            if (IsLayoutOfKind(child, kToolbarSeparator)) {
+                auto* custom = static_cast<VirtCustom*>(child);
+                custom->idealSize = vertical ? Size{tb->rowDy, DpiScale(8)} : Size{DpiScale(8), tb->rowDy};
+            }
+            Size s = child->Layout(IsLayoutOfKind(child, kToolbarGroup) ? Loose(bc.max) : ExpandInf());
+            if (vertical) {
+                if (wrap && y > 0 && y + s.dy > bc.max.dy) {
+                    centerColumn(i);
+                    x += columnWidth + gap;
+                    y = 0;
+                    columnWidth = 0;
+                    columnStart = i;
+                }
+                positions[i] = {x, y, s.dx, s.dy};
+                columnWidth = std::max(columnWidth, s.dx);
+                y += s.dy + gap;
+                height = std::max(height, y - gap);
+            } else {
+                if (wrap && x > 0 && x + s.dx > bc.max.dx) {
+                    centerRow(i);
+                    y += rowHeight + gap;
+                    x = 0;
+                    rowHeight = 0;
+                    rowStart = i;
+                }
+                positions[i] = {x, y, s.dx, s.dy};
+                x += s.dx + gap;
+                width = std::max(width, x - gap);
+                rowHeight = std::max(rowHeight, s.dy);
+            }
+        }
+        if (vertical) {
+            centerColumn(len(children));
+            return {x + columnWidth, height};
+        }
+        centerRow(len(children));
+        return {width, y + rowHeight};
+    }
+    int MinIntrinsicWidth(int height) override { return Layout(Loose({Inf, height})).dx; }
+    int MinIntrinsicHeight(int width) override { return Layout(Loose({width, Inf})).dy; }
+    void SetBounds(Rect bounds) override {
+        ILayout::SetBounds(bounds);
+        for (int i = 0; i < len(children); i++) {
+            if (IsCollapsed(children[i])) continue;
+            Rect r = positions[i];
+            bool vertical = axis == ToolbarAxis::Adaptive && tb->vertical;
+            r.x = bounds.x + (!vertical && IsUIRtl() ? bounds.dx - r.x - r.dx : r.x);
+            r.y += bounds.y;
+            children[i]->SetBounds(r);
+        }
+    }
+};
+
+// Keep each section together; the right toolbar uses a compact icon grid.
+struct ToolbarGroup : ILayout {
+    ToolbarVirt* tb;
+    ToolbarFlow* content;
+    VirtText* label;
+    Size contentSize, labelSize;
+
+    ToolbarGroup(ToolbarVirt* owner, Str name) : tb(owner) {
+        kind = kToolbarGroup;
+        content = new ToolbarFlow(tb, true, ToolbarAxis::Horizontal);
+        label = new VirtText(trans::GetTranslation(name), GetBoldPlatformFont(tb->platformFont));
+        label->isRtl = IsUIRtl();
+        label->SetColor(kColText, TbTextColor());
+        label->SetFlag(vwfNoHitTest, true);
+    }
+    ~ToolbarGroup() override {
+        delete content;
+        delete label;
+    }
+    Visibility GetVisibility() override {
+        for (auto* child : content->children) {
+            if (!IsCollapsed(child)) return Visibility::Visible;
+        }
+        return Visibility::Collapse;
+    }
+    int LayoutChildCount() override { return 2; }
+    ILayout* LayoutChildAt(int i) override { return i == 0 ? label : (ILayout*)content; }
+    Size Layout(Constraints bc) override {
+        int pad = DpiScale(4);
+        int width = tb->vertical ? std::min(bc.max.dx, DpiScale(112)) : bc.max.dx;
+        labelSize = label->Layout(ExpandInf());
+        contentSize = content->Layout(Loose({std::max(1, width - 2 * pad), Inf}));
+        return {std::max(contentSize.dx, labelSize.dx) + 2 * pad, contentSize.dy + labelSize.dy + 2 * pad};
+    }
+    int MinIntrinsicWidth(int height) override { return Layout(Loose({Inf, height})).dx; }
+    int MinIntrinsicHeight(int width) override { return Layout(Loose({width, Inf})).dy; }
+    void SetBounds(Rect bounds) override {
+        ILayout::SetBounds(bounds);
+        int pad = DpiScale(4);
+        label->SetBounds({bounds.x + pad, bounds.y + pad, bounds.dx - 2 * pad, labelSize.dy});
+        content->SetBounds({bounds.x + pad, bounds.y + pad + labelSize.dy, contentSize.dx, contentSize.dy});
+    }
+};
+
+struct ToolbarLayout : ILayout {
+    ToolbarVirt* tb;
+    ToolbarFlow* main;
+    ToolbarFlow* annotations;
+    Size mainSize, annotationSize;
+    ToolbarLayout(ToolbarVirt* owner, ToolbarFlow* strip, ToolbarFlow* annotationStrip)
+        : tb(owner), main(strip), annotations(annotationStrip) {}
+    ~ToolbarLayout() override {
+        delete main;
+        delete annotations;
+    }
+    int LayoutChildCount() override { return 2; }
+    ILayout* LayoutChildAt(int i) override { return i == 0 ? main : annotations; }
+    Size Layout(Constraints bc) override {
+        int pad = DpiScale(4);
+        Constraints inner = bc.Inset(2 * pad, 2 * pad);
+        mainSize = main->Layout(inner);
+        annotationSize = IsCollapsed(annotations) ? Size{} : annotations->Layout(inner);
+        Size s = tb->vertical ? Size{mainSize.dx + annotationSize.dx, std::max(mainSize.dy, annotationSize.dy)}
+                              : Size{std::max(mainSize.dx, annotationSize.dx), mainSize.dy + annotationSize.dy};
+        return bc.Constrain({s.dx + 2 * pad, s.dy + 2 * pad});
+    }
+    int MinIntrinsicWidth(int height) override { return Layout(Loose({Inf, height})).dx; }
+    int MinIntrinsicHeight(int width) override { return Layout(Loose({width, Inf})).dy; }
+    void SetBounds(Rect bounds) override {
+        ILayout::SetBounds(bounds);
+        int pad = DpiScale(4);
+        main->SetBounds({bounds.x + pad, bounds.y + pad, mainSize.dx, mainSize.dy});
+        if (IsCollapsed(annotations)) return;
+        int x = bounds.x + pad + (tb->vertical ? mainSize.dx : 0);
+        int y = bounds.y + pad + (tb->vertical ? 0 : mainSize.dy);
+        annotations->SetBounds({x, y, annotationSize.dx, annotationSize.dy});
+    }
+};
+
+Size UpdateToolbarPlacement(MainWindow* win, Size area, int panelsDx) {
+    ToolbarVirt* tb = win->toolbarVirt;
+    if (!tb || !tb->host || !tb->host->layout || area.dx <= 0 || area.dy <= 0) return {};
+    bool previous = tb->vertical;
+    tb->vertical = false;
+    Size top = tb->host->layout->Layout(Loose(area));
+    tb->vertical = true;
+    Size right = tb->host->layout->Layout(Loose({Inf, area.dy}));
+    bool vertical = str::EqI(gSettings->toolbarPosition, StrL("right"));
+    if (str::EqI(gSettings->toolbarPosition, StrL("auto")) && win->IsDocLoaded()) {
+        DisplayModel* dm = win->AsFixed();
+        float topZoom = dm ? dm->ToolbarFitZoom({area.dx - panelsDx, area.dy - top.dy}) : 0;
+        float rightZoom = dm ? dm->ToolbarFitZoom({area.dx - panelsDx - right.dx, area.dy}) : 0;
+        constexpr float kPlacementHysteresis = 1.005f;
+        if (topZoom <= 0 || rightZoom <= 0) {
+            vertical = area.dx - panelsDx > area.dy;
+        } else if (rightZoom > topZoom * kPlacementHysteresis) {
+            vertical = true;
+        } else if (topZoom > rightZoom * kPlacementHysteresis) {
+            vertical = false;
+        } else {
+            vertical = previous;
+        }
+    }
+    if (right.dx >= area.dx || right.dy > area.dy) vertical = false;
+    tb->vertical = vertical;
+    tb->host->Relayout();
+    if (vertical != previous) {
+        HideToolbarHoverDropdown(win);
+        tb->host->Invalidate(true);
+    }
+    return vertical ? Size{right.dx, area.dy} : Size{area.dx, top.dy};
+}
+
+Size ToolbarReservedSpace(MainWindow* win) {
+    if (!win->isToolbarVisible || win->isToolbarOverlay || !win->toolbarVirt) return {};
+    Size s = win->toolbarVirt->host->ScreenRect().Size();
+    return win->toolbarVirt->vertical ? Size{s.dx, 0} : Size{0, s.dy};
 }
 
 // (re)build the tree of virtual controls the toolbar is made of, one per button
@@ -3306,6 +3705,7 @@ static void BuildToolbarLayout(MainWindow* win) {
     ToolbarVirt* tb = win->toolbarVirt;
     VecReset(tb->items);
     VecReset(tb->annotationItems);
+    VecReset(tb->groups);
     tb->annotationRow = nullptr;
     tb->pageLabel = nullptr;
     tb->pageLabel2 = nullptr;
@@ -3320,71 +3720,87 @@ static void BuildToolbarLayout(MainWindow* win) {
     Color fg = TbTextColor();
     Color dis = TbDisabledColor();
 
-    auto* box = new HBox();
-    box->alignCross = CrossAxisAlign::CrossCenter;
-    box->rtl = IsUIRtl();
+    auto* box = new ToolbarFlow(tb, true);
+    ToolbarGroup* group = nullptr;
+    ToolbarSection section = ToolbarSection::Tools;
 
     int n = TotalButtonsCount();
     for (int i = 0; i < n; i++) {
         const ToolbarButtonInfo& bi = GetToolbarButtonInfoByIdx(i);
+        if (!bi.cmdId) {
+            VecAppend(tb->items, (VirtCtrl*)nullptr);
+            group = nullptr;
+            continue;
+        }
+        ToolbarSection next = ToolbarSectionFor(bi.cmdId);
+        if (!group || section != next) {
+            section = next;
+            Str name = ToolbarSectionName(section);
+            group = new ToolbarGroup(tb, name);
+            box->AddChild(group);
+            VecAppend(tb->groups, ToolbarGroupState{name, group});
+        }
         VirtCtrl* w = nullptr;
         bool noTranslate = i >= gLayoutButtonsCount;
         if (bi.cmdId == PageInfoId) {
-            // Old toolbar: label HWND was text + kTextPaddingRight + kButtonSpacingX
-            // (10dpi) so "Page:" and "/ N" were not flush against the edit.
+            auto* pageBox = new ToolbarFlow(tb, false);
+            group->content->AddChild(pageBox);
             int pageGap = DpiScale(kTextPaddingRight) + DpiScale(kButtonSpacingX);
-            auto* label = new VirtText(Tr("Page:"), tb->platformFont);
-            label->isRtl = box->rtl;
+            auto* label = new VirtText(StrL(""), tb->platformFont);
+            label->isRtl = IsUIRtl();
             label->SetColor(kColText, fg);
-            label->padding = {0, pageGap, 0, DpiScale(4)};
+            label->padding = {};
             label->id = PageInfoId;
             tb->pageLabel = label;
-            box->AddChild(label);
+            pageBox->AddChild(label);
 
             // chapter box: [chapterEdit] / N, hidden unless HasChapters()
             Edit* chapterEdit = ToolbarCreateChapterEdit(win, tb->platformFont, tb->iconSize);
             chapterEdit->SetVisibility(Visibility::Collapse);
             win->chapterEdit = chapterEdit;
-            box->AddChild(chapterEdit);
+            pageBox->AddChild(chapterEdit);
 
             auto* chapterTotal = new VirtText(StrL(" "), tb->platformFont);
-            chapterTotal->isRtl = box->rtl;
+            chapterTotal->isRtl = IsUIRtl();
             chapterTotal->SetColor(kColText, fg);
             chapterTotal->padding = {0, DpiScale(4), 0, pageGap};
             chapterTotal->id = PageInfoId;
             chapterTotal->SetVisibility(Visibility::Collapse);
             tb->chapterTotal = chapterTotal;
-            box->AddChild(chapterTotal);
+            pageBox->AddChild(chapterTotal);
 
             // second "Page:" label, shown before pageEdit only for HasChapters() docs
             auto* label2 = new VirtText(Tr("Page:"), tb->platformFont);
-            label2->isRtl = box->rtl;
+            label2->isRtl = IsUIRtl();
             label2->SetColor(kColText, fg);
             label2->padding = {0, pageGap, 0, DpiScale(4)};
             label2->id = PageInfoId;
             label2->SetVisibility(Visibility::Collapse);
             tb->pageLabel2 = label2;
-            box->AddChild(label2);
+            pageBox->AddChild(label2);
 
             Edit* pageEdit = ToolbarCreatePageEdit(win, tb->platformFont, tb->iconSize);
             win->pageEdit = pageEdit;
-            box->AddChild(pageEdit);
+            pageBox->AddChild(pageEdit);
 
             auto* total = new VirtText(StrL(" "), tb->platformFont);
-            total->isRtl = box->rtl;
+            total->isRtl = IsUIRtl();
             total->SetColor(kColText, fg);
             total->padding = {0, DpiScale(4), 0, pageGap};
             total->id = PageInfoId;
             tb->pageTotal = total;
-            box->AddChild(total);
+            pageBox->AddChild(total);
             VecAppend(tb->items, label);
             continue;
         }
         if (bi.cmdId == 0 || !HasToolbarButtonContent(bi)) {
-            w = MakeToolbarSeparator(tb->rowDy);
+            w = MakeToolbarSeparator(tb->rowDy, tb->vertical);
         } else if (bi.isText) {
             auto* b = new VirtButton(noTranslate ? bi.toolTip : trans::GetTranslation(bi.toolTip), tb->platformFont);
-            b->isRtl = box->rtl;
+            if (bi.cmdId == CmdAutoContentReading || bi.cmdId == CmdPaperMap) {
+                b->font = GetBoldPlatformFont(tb->platformFont);
+            }
+            b->isRtl = IsUIRtl();
             b->textPadding = {cyPad, iconPad, cyPad, iconPad};
             w = b;
         } else {
@@ -3406,17 +3822,14 @@ static void BuildToolbarLayout(MainWindow* win) {
             w->onClick = MkFunc1(OnToolbarButtonClicked, win);
         }
         VecAppend(tb->items, w);
-        box->AddChild(w);
+        group->content->AddChild(w);
     }
 
-    auto* annotationBox = new HBox();
-    annotationBox->alignMain = MainAxisAlign::MainCenter;
-    annotationBox->alignCross = CrossAxisAlign::CrossCenter;
-    annotationBox->rtl = box->rtl;
+    auto* annotationBox = new ToolbarFlow(tb, true);
     for (const ToolbarButtonInfo& bi : gPdfAnnotationButtons) {
         VirtCtrl* w = nullptr;
         if (!HasToolbarButtonContent(bi)) {
-            w = MakeToolbarSeparator(tb->rowDy);
+            w = MakeToolbarSeparator(tb->rowDy, tb->vertical);
         } else {
             auto* ib = new VirtIconButton();
             ib->padding = {cyPad, iconPad, cyPad, iconPad};
@@ -3436,11 +3849,6 @@ static void BuildToolbarLayout(MainWindow* win) {
         annotationBox->AddChild(w);
     }
 
-    auto* mainRow = new HBox();
-    mainRow->alignCross = CrossAxisAlign::CrossCenter;
-    mainRow->gap = DpiScale(kButtonSpacingX);
-    mainRow->AddChild(box, 1);
-
     SetToolbarHoverDropdown(win, CmdSaveAnnotations, MkFunc1(BuildSaveHoverMenu, win));
     // one strip for the two of them, so it doesn't jump when the mouse crosses
     // from one to the other
@@ -3451,29 +3859,34 @@ static void BuildToolbarLayout(MainWindow* win) {
         SetToolbarHoverDropdown(win, cmdId, MkFunc1(BuildAnnotColorsHoverMenu, win));
     }
 
-    auto* root = new VBox();
-    root->alignCross = CrossAxisAlign::Stretch;
-    root->AddChild(new Padding(mainRow, Insets{0, DpiScale(4), 0, DpiScale(4)}));
-    tb->annotationRow = new Padding(annotationBox, Insets{0, DpiScale(4), 0, DpiScale(4)});
+    auto* root = new ToolbarLayout(tb, box, annotationBox);
+    tb->annotationRow = annotationBox;
     tb->annotationRow->SetVisibility(Visibility::Collapse);
-    root->AddChild(tb->annotationRow);
     tb->host->SetLayout(root);
 }
 
-static void PaintToolbarBackground(MainWindow*, VirtHostPaintEvent* ev) {
+static void PaintToolbarBackground(MainWindow* win, VirtHostPaintEvent* ev) {
     ev->gfx->FillRect(ev->clientRect, TbBgColor());
+    for (const auto& group : win->toolbarVirt->groups) {
+        if (IsCollapsed(group.layout)) continue;
+        ev->gfx->FillRoundedRect(group.layout->lastBounds, DpiScale(5), TbBgColor(), TbEdgeColor());
+    }
 }
 
 // the default theme separates the toolbar from the canvas with a hairline.
 // Use the document background, not ThemeEdgeColor: on Light that is #c0c0c0
 // and reads as a dark strip against the page.
-static void PaintToolbarEdge(MainWindow*, VirtHostPaintEvent* ev) {
+static void PaintToolbarEdge(MainWindow* win, VirtHostPaintEvent* ev) {
     if (!IsCurrentThemeDefault() || ThemeColorizeControls()) {
         return;
     }
     Color canvasBg;
     ThemeDocumentColors(canvasBg);
     Rect rc = ev->clientRect;
+    if (win->toolbarVirt->vertical) {
+        ev->gfx->FillRect({rc.x, rc.y, 1, rc.dy}, canvasBg);
+        return;
+    }
     int y = ToolbarAtBottom() ? rc.y : (rc.Bottom() - 1);
     ev->gfx->FillRect({rc.x, y, rc.dx, 1}, canvasBg);
 }
@@ -3612,6 +4025,7 @@ void ToolbarPostCommand(MainWindow* win, int cmdId) {
 }
 
 void ToolbarSetHeight(MainWindow* win, int dy) {
+    if (win && win->toolbarVirt && win->toolbarVirt->vertical) return;
     HWND hwnd = win ? win->hwndToolbar : nullptr;
     if (!hwnd || dy <= 0) {
         return;

@@ -45,6 +45,8 @@ bool CancelPlacingSignature(MainWindow* win);
 void CloseSignDocumentDialog(MainWindow* win);
 bool FinishSignaturePlacement(MainWindow* win, int x, int y, bool aborted);
 void ShowEbookSettingsDialog(MainWindow* win);
+float EbookTextSize(MainWindow* win);
+void ChangeEbookTextSize(MainWindow* win, int step);
 Str ShowGetPasswordDialog(HWND hwndParent, Str fileName, bool* rememberPassword, bool* showPassword);
 void ShowGoToPageDialog(MainWindow* win);
 void ShowInverseSearchDialog(MainWindow* win);

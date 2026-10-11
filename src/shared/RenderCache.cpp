@@ -246,7 +246,7 @@ BitmapCacheEntry* RenderCache::Find(DisplayModel* dm, int pageNo, int rotation, 
         bool locOk = !loc.IsValid() || !e->loc.IsValid() || loc == e->loc;
         if ((dm == e->dm) && (pageNo == e->pageNo) && (rotation == e->rotation) &&
             (kInvalidZoom == zoom || zoom == e->zoom) && (!tile || e->tile == *tile) &&
-            (e->darkModeEpoch == darkModeEpoch) && locOk) {
+            (e->darkModeEpoch == darkModeEpoch) && locOk && e->layoutBox == dm->PageMediaBoxForLayout(pageNo)) {
             e->refs++;
             ReportIf(i != e->cacheIdx);
             return e;
@@ -412,6 +412,7 @@ void RenderCache::Add(PageRenderRequest& req, Pixmap* bmp) {
     // Copy the PageRenderRequest as it will be reused
     auto* entry = new BitmapCacheEntry(req.dm, req.pageNo, req.rotation, req.zoom, req.tile, bmp);
     entry->loc = req.loc;
+    entry->layoutBox = req.layoutBox;
     entry->darkModeEpoch = req.darkModeEpoch;
     entry->cacheIdx = cacheCount;
     cache[cacheCount] = entry;
@@ -777,7 +778,8 @@ void RenderCache::RequestRendering(DisplayModel* dm, int pageNo, TilePosition ti
         // it doesn't count as rendering this page - we must queue a new request
         bool isRenderingTile = cr && !cr->abort && (cr->pageNo == pageNo) && (cr->dm == dm) && (cr->tile == tile);
         if (isRenderingTile) {
-            if ((cr->zoom == zoom) && (cr->rotation == rotation)) {
+            if ((cr->zoom == zoom) && (cr->rotation == rotation) &&
+                cr->layoutBox == dm->PageMediaBoxForLayout(pageNo)) {
                 /* we're already rendering exactly the same page */
                 return;
             }
@@ -795,7 +797,8 @@ void RenderCache::RequestRendering(DisplayModel* dm, int pageNo, TilePosition ti
     for (int i = 0; i < requestCount; i++) {
         PageRenderRequest* req = &(requests[i]);
         if ((req->pageNo == pageNo) && (req->dm == dm) && (req->tile == tile)) {
-            if ((req->zoom == zoom) && (req->rotation == rotation)) {
+            if ((req->zoom == zoom) && (req->rotation == rotation) &&
+                req->layoutBox == dm->PageMediaBoxForLayout(pageNo)) {
                 /* Request with exactly the same parameters already queued for
                    rendering. Move it to the top of the queue so that it'll
                    be rendered faster. */
@@ -809,6 +812,7 @@ void RenderCache::RequestRendering(DisplayModel* dm, int pageNo, TilePosition ti
                 req->zoom = zoom;
                 req->rotation = rotation;
                 req->pageRect = GetTileRectUser(dm, pageNo, rotation, zoom, tile);
+                req->layoutBox = dm->PageMediaBoxForLayout(pageNo);
             }
             return;
         }
@@ -932,6 +936,7 @@ bool RenderCache::Render(DisplayModel* dm, int pageNo, int rotation, float zoom,
     newRequest->pageNo = pageNo;
     newRequest->rotation = rotation;
     newRequest->zoom = zoom;
+    newRequest->layoutBox = dm->PageMediaBoxForLayout(pageNo);
     PageInfo* pi = dm->GetPageInfo(pageNo);
     newRequest->loc = pi ? pi->loc : kInvalidLocation;
     if (tile) {

@@ -2308,13 +2308,13 @@ static bool LinkDestHighlightRect(DisplayModel* dm, int pageNo, RectF dest, Rect
 // (issues #1085, #5945). Always fades; ForwardSearch.HighlightPermanent stays
 // a SyncTeX-only option. Held longer than SyncTeX (kHideLinkDestMarkDelayInMs)
 // so the mark is still visible after the page jump.
-void ShowLinkDestHighlight(MainWindow* win, int pageNo, RectF dest) {
+void ShowLinkDestHighlight(MainWindow* win, int pageNo, RectF dest, LinkHighlight kind) {
     if (!win || !win->AsFixed()) {
         return;
     }
     VecReset(win->fwdSearchMark.rects);
     win->fwdSearchMark.show = false;
-    if (!gSettings || !gSettings->highlightLinkDestination) {
+    if (!gSettings || (kind == LinkHighlight::Setting && !gSettings->highlightLinkDestination)) {
         return;
     }
     DisplayModel* dm = win->AsFixed();

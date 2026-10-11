@@ -1045,6 +1045,10 @@ RectF EngineBase::PageContentBox(int pageNo, RenderTarget /*target*/) {
     return PageMediabox(pageNo);
 }
 
+RectF EngineBase::PageReadingContentBox(int pageNo) {
+    return PageContentBox(pageNo);
+}
+
 const char* PdfPageBoxName(PdfPageBoxKind kind) {
     // Names follow PdfPageBoxKind order.
     static constexpr const char* names[] = {"media", "crop", "bleed", "trim", "art"};
@@ -1190,6 +1194,10 @@ RectF EnginePdfProxy::PageMediabox(int pageNo) {
 
 RectF EnginePdfProxy::PageContentBox(int pageNo, RenderTarget target) {
     return pdfEngine->PageContentBox(pageNo, target);
+}
+
+RectF EnginePdfProxy::PageReadingContentBox(int pageNo) {
+    return pdfEngine->PageReadingContentBox(pageNo);
 }
 
 Pixmap* EnginePdfProxy::RenderPage(RenderPageArgs& args) {

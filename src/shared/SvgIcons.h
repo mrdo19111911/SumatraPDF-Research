@@ -60,6 +60,27 @@ extern const char* gIconAnnotFileAttachment;
 extern const char* gIconTrash;
 extern const char* gIconArrowUp;
 extern const char* gIconHome;
+extern const char* gIconReadingDark;
+extern const char* gIconTextLarger;
+extern const char* gIconTextSmaller;
+extern const char* gIconPaperChat;
+extern const char* gIconPaperText;
+extern const char* gIconNarration;
+extern const char* gIconMp3Export;
+extern const char* gIconConnectedPapers;
+extern const char* gIconArxivSearch;
+extern const char* gIconCollectPapers;
+extern const char* gIconSciHub;
+extern const char* gIconDriveUpload;
+extern const char* gIconZaloShare;
+extern const char* gIconResearchTools;
+extern const char* gIconSourceAnswer;
+extern const char* gIconProofExplain;
+extern const char* gIconSymbolIndex;
+extern const char* gIconPaperCompare;
+extern const char* gIconVersionCompare;
+extern const char* gIconFigureExplain;
+extern const char* gIconReadingView;
 
 struct Pixmap;
 

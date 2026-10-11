@@ -938,10 +938,15 @@ static void RestoreInstallCopyFiles(Str installDir) {
     }
 }
 
-// IDR_EMBEDDED_PAK also holds translations and the manual; the installer only
-// writes the top-level binaries (libsumatrapdf.dll, PdfFilter.dll, PdfPreview.dll,
-// sumatrapdf-tool.exe) to the install dir.
+// Keep helpers beside the installed app; leave the manual and fonts embedded.
 static bool IsInstallerPayload(Str name) {
+    name = str::ReplaceTemp(name, StrL("\\"), StrL("/"));
+    const Str helpers[] = {StrL("research/Install-Vietnamese-Voice.ps1"), StrL("research/Speak-Vietnamese.ps1"),
+                           StrL("research/THIRD-PARTY.txt"), StrL("research/SciHub-MIT-LICENSE.txt"),
+                           StrL("research/Anna-API-MIT-LICENSE.txt")};
+    for (Str helper : helpers) {
+        if (str::Eq(name, helper)) return true;
+    }
     if (str::ContainsCharAny(name, StrL("\\/"))) {
         return false;
     }
@@ -982,6 +987,13 @@ static bool ExtractInstallerFiles(lzma::SimpleArchive* archive, Str destDir) {
             return false;
         }
         TempStr filePath = path::JoinTemp(destDir, fi->name);
+
+        TempStr parentDir = path::NormalizeTemp(path::GetDirTemp(filePath));
+        if (!dir::CreateAll(parentDir)) {
+            free(uncompressed);
+            NotifyFailed(Tr("Couldn't create the installation directory"));
+            return false;
+        }
 
         Str d = Str((char*)uncompressed, (int)fi->uncompressedSize);
         bool ok = WriteInstallerFileRobust(filePath, d);

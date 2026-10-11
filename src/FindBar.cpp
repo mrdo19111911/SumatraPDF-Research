@@ -711,6 +711,7 @@ static void PositionFindBar(FindBarWnd* bar) {
     // which pushed the bar a few pixels too far right (#5762).
     Rect frClient = HwndMapLtrClientRectToScreen(win->hwndFrame, HwndClientRect(win->hwndFrame));
     int cx = frClient.x + frClient.dx - bar->barDx;
+    if (win->toolbarVirt && win->toolbarVirt->vertical && !btn.IsEmpty()) cx = btn.x - bar->barDx;
     int cy;
     if (btn.IsEmpty()) {
         cy = fr.y + bar->barDy;

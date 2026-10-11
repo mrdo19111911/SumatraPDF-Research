@@ -5,7 +5,11 @@
 
 #include "base/Base.h"
 #include "base/CmdLineArgs.h"
+#include "base/DirScan.h"
 #include "base/File.h"
+#if OS_WIN
+#include "base/Win.h"
+#endif
 
 #include "gui/UIModels.h"
 
@@ -18,16 +22,67 @@
 
 #include "SumatraLog.h"
 
-static bool gClaudeExecutableSearched = false;
 static Str gClaudeExecutablePath;
+static Str gClaudeConfiguredPath;
+
+#if OS_WIN
+static TempStr FindVSCodeClaudeTemp(Str root) {
+    TempStr bestName;
+    TempStr bestPath;
+    DirIter dirs(root);
+    dirs.includeDirs = true;
+    dirs.includeFiles = false;
+    for (DirIterEntry* de : dirs) {
+        if (!str::StartsWithI(de->name, StrL("anthropic.claude-code-"))) {
+            continue;
+        }
+        TempStr exe = path::JoinTemp(de->filePath, StrL("resources/native-binary/claude.exe"));
+        if (file::Exists(exe) && (len(bestName) == 0 || str::CmpNatural(de->name, bestName) > 0)) {
+            bestName = str::DupTemp(de->name);
+            bestPath = exe;
+        }
+    }
+    return bestPath;
+}
+
+static TempStr FindDesktopClaudeTemp(Str root) {
+    TempStr bestName;
+    TempStr bestPath;
+    DirIter versions(root);
+    versions.includeDirs = true;
+    versions.includeFiles = false;
+    for (DirIterEntry* version : versions) {
+        if (bestName && str::CmpNatural(version->name, bestName) <= 0) {
+            continue;
+        }
+        DirIter builds(version->filePath);
+        builds.includeDirs = true;
+        builds.includeFiles = false;
+        for (DirIterEntry* build : builds) {
+            TempStr exe = path::JoinTemp(build->filePath, StrL("claude.exe"));
+            if (file::Exists(exe)) {
+                bestName = str::DupTemp(version->name);
+                bestPath = exe;
+                break;
+            }
+        }
+    }
+    return bestPath;
+}
+#endif
 
 static TempStr FindClaudeExecutableTemp() {
-    if (gClaudeExecutableSearched) {
+#if defined(SUMATRA_NG)
+    Str configured;
+#else
+    Str configured = gSettings->claudeCode.executablePath;
+#endif
+    if (str::Eq(gClaudeConfiguredPath, configured) && gClaudeExecutablePath && file::Exists(gClaudeExecutablePath)) {
         return gClaudeExecutablePath;
     }
-    gClaudeExecutableSearched = true;
 
     StrVec candidates;
+    candidates.Append(configured);
     TempStr userProfile = AIChatHomeDirTemp();
     if (len(userProfile) > 0) {
 #if OS_WIN
@@ -38,9 +93,35 @@ static TempStr FindClaudeExecutableTemp() {
         candidates.Append(path::JoinTemp(userProfile, StrL(".local/bin/claude")));
 #endif
     }
-    gClaudeExecutablePath = str::Dup(AIChatFindExecutableTemp(candidates, StrL("claude.exe"), StrL("claude")));
+    TempStr exe = AIChatFindExecutableTemp(candidates, StrL("claude.exe"), StrL("claude"));
+#if OS_WIN
+    // Desktop and VS Code bundle the CLI without adding it to PATH.
+    if (len(exe) == 0) {
+        exe = FindDesktopClaudeTemp(path::JoinTemp(GetSpecialFolderTemp(CSIDL_APPDATA), StrL("Claude/claude-code")));
+    }
+    if (len(exe) == 0 && userProfile) {
+        exe = FindVSCodeClaudeTemp(path::JoinTemp(userProfile, StrL(".vscode/extensions")));
+    }
+    if (len(exe) == 0 && userProfile) {
+        exe = FindVSCodeClaudeTemp(path::JoinTemp(userProfile, StrL(".vscode-insiders/extensions")));
+    }
+#endif
+    str::ReplaceWithCopy(&gClaudeExecutablePath, exe);
+    str::ReplaceWithCopy(&gClaudeConfiguredPath, configured);
     return gClaudeExecutablePath;
 }
+
+#if !defined(SUMATRA_NG)
+bool AIChatSetClaudeExecutable(Str path) {
+    if (len(path) == 0 || !str::EndsWithI(path, StrL(".exe")) || !file::Exists(path)) {
+        return false;
+    }
+    str::ReplaceWithCopy(&gSettings->claudeCode.executablePath, path);
+    str::ReplaceWithCopy(&gClaudeExecutablePath, path);
+    ScheduleSaveSettings();
+    return true;
+}
+#endif
 
 static Mutex gClaudeCodeLogMutex;
 static AIChatLogger gClaudeCodeLogger = {&gClaudeCodeLogMutex, StrL("claude-code-log.txt"), StrL("claude-code")};

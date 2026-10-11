@@ -58,6 +58,7 @@ struct TilePosition {
    that uniquely identifies rendered page (dm, pageNo, rotation, zoom)
    and the corresponding rendered bitmap. */
 struct BitmapCacheEntry {
+    RectF layoutBox;
     DisplayModel* dm = nullptr;
     int pageNo = 0;
     int rotation = 0;
@@ -93,6 +94,7 @@ struct BitmapCacheEntry {
    separate for clarity in the code (PageRenderRequests are reused,
    while BitmapCacheEntries are ref-counted) */
 struct PageRenderRequest {
+    RectF layoutBox;
     DisplayModel* dm = nullptr;
     int pageNo = 0;
     int rotation = 0;

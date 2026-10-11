@@ -527,6 +527,7 @@ class EngineBase {
     // the box containing the visible page content (usually RectF(0, 0, pageWidth, pageHeight))
     virtual RectF PageMediabox(int pageNo) = 0;
     virtual RectF PageContentBox(int pageNo, RenderTarget target = RenderTarget::View);
+    virtual RectF PageReadingContentBox(int pageNo);
     virtual void GetPdfPageBoxes(int pageNo, Vec<PdfPageBox>& out);
 
     // renders a page into a cacheable Pixmap
@@ -642,6 +643,7 @@ class EnginePdfProxy : public EngineBase {
   public:
     RectF PageMediabox(int pageNo) override;
     RectF PageContentBox(int pageNo, RenderTarget target = RenderTarget::View) override;
+    RectF PageReadingContentBox(int pageNo) override;
     Pixmap* RenderPage(RenderPageArgs& args) override;
     RectF Transform(const RectF& rect, int pageNo, float zoom, int rotation, bool inverse = false) override;
     Str GetFileData() override;

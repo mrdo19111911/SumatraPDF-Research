@@ -450,6 +450,7 @@ gp::El* AIChatNotInstalledDialogBuild(MainWindow* win, gp::Ctx* cx) {
 
 #else
 constexpr int kBtnIdAIChatLearnMore = 100;
+constexpr int kBtnIdAIChatBrowse = 101;
 
 static HRESULT CALLBACK AIChatNotInstalledDialogCallback(HWND /*hwnd*/, UINT msg, WPARAM wParam, LPARAM /*lParam*/,
                                                          LONG_PTR lpRefData) {
@@ -468,16 +469,21 @@ static HRESULT CALLBACK AIChatNotInstalledDialogCallback(HWND /*hwnd*/, UINT msg
     return S_OK;
 }
 
-void AIChatShowNotInstalledDialog(const AIChatNotInstalledDialogArgs& args) {
+bool AIChatShowNotInstalledDialog(const AIChatNotInstalledDialogArgs& args) {
     Str linkLabel = Tr("AI Chat documentation");
     TempStr link = fmt(R"(<a href="#">%s</a>)", linkLabel);
     TempStr content = fmt(Tr("See %s for setup instructions.").s, link);
+    if (args.canBrowse) {
+        content = fmt("%s\n\n%s", Tr("Choose the Claude Code executable (claude.exe)."), content);
+    }
 
-    TASKDIALOG_BUTTON buttons[2];
+    TASKDIALOG_BUTTON buttons[3];
     buttons[0].nButtonID = IDOK;
-    buttons[0].pszButtonText = CWStrTemp(Tr("OK"));
+    buttons[0].pszButtonText = CWStrTemp(args.canBrowse ? Tr("Cancel") : Tr("OK"));
     buttons[1].nButtonID = kBtnIdAIChatLearnMore;
     buttons[1].pszButtonText = CWStrTemp(Tr("Learn more"));
+    buttons[2].nButtonID = kBtnIdAIChatBrowse;
+    buttons[2].pszButtonText = CWStrTemp(Tr("Browse..."));
 
     TASKDIALOGCONFIG dialogConfig{};
     DWORD flags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_SIZE_TO_CONTENT | TDF_ENABLE_HYPERLINKS;
@@ -485,18 +491,21 @@ void AIChatShowNotInstalledDialog(const AIChatNotInstalledDialogArgs& args) {
         flags |= TDF_RTL_LAYOUT;
     }
     dialogConfig.cbSize = sizeof(TASKDIALOGCONFIG);
+    dialogConfig.hwndParent = args.hwndParent;
     dialogConfig.pszWindowTitle = CWStrTemp(args.windowTitle);
     dialogConfig.pszMainInstruction = CWStrTemp(args.mainInstruction);
     dialogConfig.pszContent = CWStrTemp(content);
-    dialogConfig.nDefaultButton = IDOK;
+    dialogConfig.nDefaultButton = args.canBrowse ? kBtnIdAIChatBrowse : IDOK;
     dialogConfig.dwFlags = (TASKDIALOG_FLAGS)flags;
     dialogConfig.pfCallback = AIChatNotInstalledDialogCallback;
     dialogConfig.lpCallbackData = (LONG_PTR)&args.docUri;
     dialogConfig.pButtons = buttons;
-    dialogConfig.cButtons = dimof(buttons);
+    dialogConfig.cButtons = args.canBrowse ? dimof(buttons) : 2;
     dialogConfig.pszMainIcon = TD_INFORMATION_ICON;
 
-    TaskDialogIndirect(&dialogConfig, nullptr, nullptr, nullptr);
+    int selected = 0;
+    TaskDialogIndirect(&dialogConfig, &selected, nullptr, nullptr);
+    return selected == kBtnIdAIChatBrowse;
 }
 
 #endif
@@ -658,7 +667,7 @@ function sanitizedMarkdown(markdown) {
     if (el.tagName === 'A' && el.hasAttribute('href')) {
       try {
         var u = new URL(el.getAttribute('href'), location.href);
-        if (!['http:', 'https:', 'mailto:'].includes(u.protocol)) el.removeAttribute('href');
+        if (!['http:', 'https:', 'mailto:', 'sumatra-source:'].includes(u.protocol)) el.removeAttribute('href');
       } catch (_) {
         el.removeAttribute('href');
       }

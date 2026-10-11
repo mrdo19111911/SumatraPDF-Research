@@ -75,6 +75,14 @@ if not exist "%STAGING%\" mkdir "%STAGING%"
 copy /y "%WORK%\translations.txt" "%STAGING%\translations.txt" >nul || exit /b 1
 copy /y "%ROOT%\ext\marked.min.js" "%STAGING%\marked.min.js" >nul || exit /b 1
 copy /y "%ROOT%\ext\mermaid.min.js" "%STAGING%\mermaid.min.js" >nul || exit /b 1
+copy /y "%ROOT%\resources\research\paper-map.html" "%STAGING%\paper-map.html" >nul || exit /b 1
+copy /y "%ROOT%\resources\research\paper-map.js" "%STAGING%\paper-map.js" >nul || exit /b 1
+robocopy "%ROOT%\resources\markdown" "%STAGING%\markdown" /E /NFL /NDL /NJH /NJS /NP >nul
+if errorlevel 8 exit /b 1
+if not exist "%STAGING%\research\" mkdir "%STAGING%\research"
+for %%F in (Install-Vietnamese-Voice.ps1 Speak-Vietnamese.ps1 THIRD-PARTY.txt SciHub-MIT-LICENSE.txt Anna-API-MIT-LICENSE.txt) do (
+  copy /y "%ROOT%\research\%%F" "%STAGING%\research\%%F" >nul || exit /b 1
+)
 
 REM base 14 (URW), CJK fallback (Droid), Charis SIL for EPUB, a few Noto for
 REM math / music / symbols / emoji. Not packed: NimbusBoxes, Source Han and the

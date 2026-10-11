@@ -46,6 +46,8 @@ void ToolbarNoteDropdownClosed();
 void TogglePdfAnnotationsToolbar(MainWindow*);
 void EnablePdfAnnotationsToolbar(MainWindow*);
 int ToolbarIconSize();
+Size UpdateToolbarPlacement(MainWindow*, Size area, int panelsDx);
+Size ToolbarReservedSpace(MainWindow*);
 
 TempStr ToolbarButtonsResultTemp(int* exitCodeOut);
 
@@ -138,11 +140,17 @@ struct ToolbarHoverReg {
     Func1<ToolbarHoverBuildEvent*> build;
 };
 
+struct ToolbarGroupState {
+    Str name;
+    ILayout* layout = nullptr;
+};
+
 struct ToolbarVirt {
     // the toolbar's window; owns the layout tree and the virtual controls
     VirtHost* host = nullptr;
     Vec<VirtCtrl*> items; // not owned; the layout owns them
     Vec<VirtCtrl*> annotationItems;
+    Vec<ToolbarGroupState> groups;
     ILayout* annotationRow = nullptr;
     VirtText* pageLabel = nullptr;
     VirtText* pageLabel2 = nullptr; // "Page:" before pageEdit, only for HasChapters() docs
@@ -151,6 +159,7 @@ struct ToolbarVirt {
     PlatformFont* platformFont = nullptr;
     int iconSize = 0;
     int rowDy = 0;
+    bool vertical = false;
 
     // buttons with a hover drop-down, and the one currently open (if any)
     Vec<ToolbarHoverReg> hoverRegs;

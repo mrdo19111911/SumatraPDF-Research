@@ -15,6 +15,16 @@
 import { dlopen, FFIType, JSCallback, ptr, toArrayBuffer } from "bun:ffi";
 
 const user32 = dlopen("user32.dll", {
+  CreateDesktopW: {
+    args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.u32, FFIType.u32, FFIType.ptr],
+    returns: FFIType.u64,
+  },
+  CloseDesktop: { args: [FFIType.u64], returns: FFIType.bool },
+  GetThreadDesktop: { args: [FFIType.u32], returns: FFIType.u64 },
+  GetUserObjectInformationW: {
+    args: [FFIType.u64, FFIType.i32, FFIType.ptr, FFIType.u32, FFIType.ptr],
+    returns: FFIType.bool,
+  },
   EnumWindows: { args: [FFIType.function, FFIType.i64], returns: FFIType.bool },
   EnumChildWindows: { args: [FFIType.ptr, FFIType.function, FFIType.i64], returns: FFIType.bool },
   GetClassNameW: { args: [FFIType.ptr, FFIType.ptr, FFIType.i32], returns: FFIType.i32 },
@@ -81,6 +91,7 @@ const user32 = dlopen("user32.dll", {
   GetSubMenu: { args: [FFIType.u64, FFIType.i32], returns: FFIType.u64 },
   GetMenuStringW: { args: [FFIType.u64, FFIType.u32, FFIType.ptr, FFIType.i32, FFIType.u32], returns: FFIType.i32 },
   GetMenuState: { args: [FFIType.u64, FFIType.u32, FFIType.u32], returns: FFIType.u32 },
+  GetMenu: { args: [FFIType.u64], returns: FFIType.u64 },
   OpenClipboard: { args: [FFIType.ptr], returns: FFIType.bool },
   CloseClipboard: { args: [], returns: FFIType.bool },
   GetClipboardData: { args: [FFIType.u32], returns: FFIType.u64 },
@@ -178,6 +189,8 @@ const kernel32 = dlopen("kernel32.dll", {
   WaitForSingleObject: { args: [FFIType.u64, FFIType.u32], returns: FFIType.u32 },
   CloseHandle: { args: [FFIType.u64], returns: FFIType.bool },
   GetLastError: { args: [], returns: FFIType.u32 },
+  GetCurrentThreadId: { args: [], returns: FFIType.u32 },
+  GetExitCodeProcess: { args: [FFIType.u64, FFIType.ptr], returns: FFIType.bool },
   CreateFileW: {
     args: [FFIType.ptr, FFIType.u32, FFIType.u32, FFIType.ptr, FFIType.u32, FFIType.u32, FFIType.u64],
     returns: FFIType.u64,
@@ -251,6 +264,15 @@ const ERROR_SUCCESS = 0;
 // CreateProcess creation flags
 const DETACHED_PROCESS = 0x00000008;
 const CREATE_NEW_PROCESS_GROUP = 0x00000200;
+const CREATE_NO_WINDOW = 0x08000000;
+const DESKTOP_TEST_ACCESS = 0x00cf;
+const UOI_NAME = 2;
+const STARTF_FORCEOFFFEEDBACK = 0x80;
+const STARTUPINFO_SIZE = 104;
+const STARTUPINFO_DESKTOP_OFFSET = 16;
+const STARTUPINFO_FLAGS_OFFSET = 60;
+const PROCESS_INFO_SIZE = 24;
+const PROCESS_INFO_THREAD_OFFSET = 8;
 
 // window messages
 export const WM_CLOSE = 0x0010;
@@ -1648,11 +1670,81 @@ export function launchDetached(exePath: string, args: string[] = []): number {
   return pid;
 }
 
+export function currentDesktopName(): string {
+  const desktop = user32.symbols.GetThreadDesktop(kernel32.symbols.GetCurrentThreadId());
+  const name = new Uint8Array(512);
+  if (!user32.symbols.GetUserObjectInformationW(desktop, UOI_NAME, ptr(name), name.length, null))
+    throw new Error(`Desktop name failed: ${kernel32.symbols.GetLastError()}`);
+  return readWideZ(name, 0);
+}
+
+function quoteProcessArg(arg: string): string {
+  return '"' + arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, "$1$1") + '"';
+}
+
+// Keep test windows on a separate desktop. Never switch the user's input desktop.
+export async function runOnHiddenDesktop(exe: string, args: string[], name: string): Promise<number> {
+  const desktopW = wideZ(name);
+  const desktop = user32.symbols.CreateDesktopW(ptr(desktopW), null, null, 0, DESKTOP_TEST_ACCESS, null);
+  if (!desktop) throw new Error(`CreateDesktopW failed: ${kernel32.symbols.GetLastError()}`);
+  let processHandle = 0n;
+  try {
+    const appW = wideZ(exe);
+    const commandW = wideZ([exe, ...args].map(quoteProcessArg).join(" "));
+    const startup = new Uint8Array(STARTUPINFO_SIZE);
+    const start = new DataView(startup.buffer);
+    start.setUint32(0, startup.length, true);
+    start.setBigUint64(STARTUPINFO_DESKTOP_OFFSET, BigInt(ptr(desktopW)), true);
+    start.setUint32(STARTUPINFO_FLAGS_OFFSET, STARTF_FORCEOFFFEEDBACK, true);
+    const info = new Uint8Array(PROCESS_INFO_SIZE);
+    if (
+      !kernel32.symbols.CreateProcessW(
+        ptr(appW),
+        ptr(commandW),
+        null,
+        null,
+        false,
+        CREATE_NO_WINDOW,
+        null,
+        null,
+        ptr(startup),
+        ptr(info),
+      )
+    )
+      throw new Error(`Hidden CreateProcessW failed: ${kernel32.symbols.GetLastError()}`);
+    const pi = new DataView(info.buffer);
+    processHandle = pi.getBigUint64(0, true);
+    kernel32.symbols.CloseHandle(pi.getBigUint64(PROCESS_INFO_THREAD_OFFSET, true));
+    const deadline = Date.now() + 10 * 60 * 1000;
+    while (true) {
+      const status = kernel32.symbols.WaitForSingleObject(processHandle, 0);
+      if (status === WAIT_OBJECT_0) break;
+      if (status !== WAIT_TIMEOUT) throw new Error(`Hidden process wait failed: ${kernel32.symbols.GetLastError()}`);
+      if (Date.now() >= deadline) throw new Error("Hidden test timed out after ten minutes");
+      await sleep(100);
+    }
+    const code = new Uint32Array(1);
+    if (!kernel32.symbols.GetExitCodeProcess(processHandle, ptr(code)))
+      throw new Error(`Hidden exit code failed: ${kernel32.symbols.GetLastError()}`);
+    return code[0]!;
+  } finally {
+    if (processHandle) {
+      if (kernel32.symbols.WaitForSingleObject(processHandle, 0) === WAIT_TIMEOUT) {
+        kernel32.symbols.TerminateProcess(processHandle, 1);
+        kernel32.symbols.WaitForSingleObject(processHandle, 5000);
+      }
+      kernel32.symbols.CloseHandle(processHandle);
+    }
+    user32.symbols.CloseDesktop(desktop);
+  }
+}
+
 const TH32CS_SNAPPROCESS = 0x2;
 const INVALID_HANDLE_VALUE = 0xffffffffffffffffn;
 const PROCESS_TERMINATE = 0x0001;
 const SYNCHRONIZE = 0x00100000;
 const WAIT_OBJECT_0 = 0;
+const WAIT_TIMEOUT = 0x102;
 // x64 PROCESSENTRY32W: DWORD fields, then ULONG_PTR, then WCHAR szExeFile[MAX_PATH]
 const PROCESSENTRY32W_SIZE = 568;
 const PROCESSENTRY32W_PID = 8;
@@ -1761,6 +1853,15 @@ export function getPopupMenuHandle(hwndPopup: number): bigint {
 
 export function getMenuItemCount(hmenu: bigint): number {
   return user32.symbols.GetMenuItemCount(hmenu);
+}
+
+export function getWindowMenu(hwnd: number): bigint {
+  return BigInt(user32.symbols.GetMenu(hwnd));
+}
+
+export function getMenuItemChecked(hmenu: bigint, pos: number): boolean {
+  const state = user32.symbols.GetMenuState(hmenu, pos, MF_BYPOSITION);
+  return state !== 0xffffffff && (state & 0x0008) !== 0;
 }
 
 // command id of the item at `pos`, 0 if it's a separator or a submenu

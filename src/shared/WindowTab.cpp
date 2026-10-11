@@ -27,6 +27,7 @@
 #include "ReadingAutoScroll.h"
 #include "ReadingBar.h"
 #include "AnnotEditToolbar.h"
+#include "ResearchTools.h"
 #endif
 #include "WindowTab.h"
 
@@ -41,6 +42,23 @@ void WindowTab::SetFilePath(Str path) {
         file::Delete(filePath);
     }
     if (changed) {
+#if !defined(SUMATRA_NG)
+        ResearchForgetTab(this);
+#endif
+        researchSources.Reset();
+        researchGeneration = 0;
+#if !defined(SUMATRA_NG)
+        for (AIChatTabState& st : aiChat) {
+            st.requestId = 0;
+            if (st.process) {
+                TerminateProcess(st.process, 0);
+                CloseHandle(st.process);
+                st.process = nullptr;
+            }
+            str::FreePtr(&st.sessionId);
+            st.chatLog.Reset();
+        }
+#endif
         str::FreePtr(&pendingFindText);
     }
     str::ReplaceWithCopy(&filePath, path);
@@ -89,6 +107,7 @@ WindowTab::~WindowTab() {
     // Nothing may point at a tab that is going away.
     ReadAloudForgetTab(this);
 #if !defined(SUMATRA_NG)
+    ResearchForgetTab(this);
     ReadingAutoScrollForgetTab(this);
     ReadingBarForgetTab(this);
 #endif

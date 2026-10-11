@@ -392,6 +392,7 @@ void MainWindow::UpdateCanvasSize() {
     if (IsDocLoaded()) {
         // the display model needs to know the full size (including scroll bars)
         ctrl->SetViewPortSize(GetViewPortSize());
+        UpdatePortraitPdfView(this);
     }
     if (CurrentTab()) {
         CurrentTab()->canvasRc = canvasRc;

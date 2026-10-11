@@ -53,6 +53,8 @@
 #include "HomePage.h"
 #include "Notifications.h"
 #include "AIChatCommon.h"
+#include "AIChatPanel.h"
+#include "ResearchTools.h"
 #include "SumatraDialogs.h"
 #include "AnnotEditToolbar.h"
 #include "AnnotFilterToolbar.h"
@@ -69,6 +71,7 @@
 #include "NavFilesInFolder.h"
 #include "PerfLog.h"
 #include "SumatraControl.h"
+#include "DocumentShare.h"
 
 extern bool gIsStartup;
 TempStr FindHistoryResultTemp(int* exitCodeOut);
@@ -265,6 +268,27 @@ static TempStr DisplayModeResultTemp(Str action, int* exitCodeOut) {
     }
 
     bool reportR2L = str::EqI(action, StrL("r2l"));
+    if (str::EqI(action, StrL("reading-boxes"))) {
+        DisplayModel* dm = win->AsFixed();
+        if (!dm) return finish(StrL("ERROR not-fixed-page"), 1);
+        EngineBase* engine = dm->GetEngine();
+        Rect viewport = dm->GetViewPort();
+        out.Append(fmt("viewport=%d,%d count=%d current=%d zoom=%g\n", viewport.dx, viewport.dy, dm->PageCount(),
+                       dm->CurrentPageNo(), dm->GetZoomVirtual()));
+        for (int pageNo = 1; pageNo <= dm->PageCount(); pageNo++) {
+            PageInfo* pi = dm->GetPageInfo(pageNo);
+            if (!pi || !dm->PageShown(pageNo)) continue;
+            RectF content = engine->PageReadingContentBox(pageNo);
+            RectF media = dm->PageMediaBoxForLayout(pageNo);
+            Rect screen = dm->CvtToScreen(pageNo, content);
+            out.Append(
+                fmt("page=%d content=%.3f,%.3f,%.3f,%.3f ", pageNo, content.x, content.y, content.dx, content.dy));
+            out.Append(fmt("media=%.3f,%.3f,%.3f,%.3f ", media.x, media.y, media.dx, media.dy));
+            out.Append(fmt("screen=%d,%d,%d,%d frame=%d,%d,%d,%d\n", screen.x, screen.y, screen.dx, screen.dy,
+                           pi->pageOnScreen.x, pi->pageOnScreen.y, pi->pageOnScreen.dx, pi->pageOnScreen.dy));
+        }
+        return finish({}, 0);
+    }
     if (str::EqI(action, StrL("zoom-real"))) {
         return finish(fmt("OK zoomReal=%g", win->ctrl->GetZoomVirtual(true)), 0);
     }
@@ -935,6 +959,10 @@ enum class ControlCmd : u16 {
     TestFrameNcStrips = 114,
     TestMergePdf = 115,
     TestWheelWhileClosing = 116,
+    TestAIChatSetup = 117,
+    TestDocumentShare = 118,
+    TestChatPaper = 119,
+    TestResearchTools = 120,
 };
 
 enum class ControlArgType : u16 {
@@ -2254,6 +2282,46 @@ static void ExecuteControlRequest(ControlRequest* req) {
             int exitCode = 0;
             Str res = SelectTextKeyboardResultTemp(&exitCode);
             AppendTestResult(req, exitCode, res);
+            break;
+        }
+
+        case ControlCmd::TestAIChatSetup: {
+            Str action = StringArg(req, 0);
+            if (str::Eq(action, StrL("settings"))) {
+                Str serialized = SerializeSettings(gSettings, {});
+                AppendTestResult(req, 0, serialized);
+                str::Free(serialized);
+                break;
+            }
+            bool ok = true;
+            if (str::Eq(action, StrL("browse"))) {
+                ok = len(gWindows) > 0 && AIChatConfigureClaude(gWindows[0]);
+            }
+            Str path = GetClaudeCodeProvider()->FindExecutableTemp();
+            AppendTestResult(req, ok && len(path) > 0 ? 0 : 1, path);
+            break;
+        }
+
+        case ControlCmd::TestDocumentShare: {
+            int code = 1;
+            Str result = TestDocumentShareTemp(StringArg(req, 0), StringArg(req, 1), StringArg(req, 2),
+                                               StringArg(req, 3), StringArg(req, 4), &code);
+            AppendTestResult(req, code, result);
+            break;
+        }
+        case ControlCmd::TestChatPaper: {
+            if (len(gWindows) == 0) {
+                AppendTestResult(req, 2, StrL("NOTREADY"));
+                break;
+            }
+            AppendTestResult(req, 0, TestChatPaperTemp(gWindows[0], StringArg(req, 0), StringArg(req, 1)));
+            break;
+        }
+        case ControlCmd::TestResearchTools: {
+            int code = 1;
+            Str result = TestResearchToolsTemp(len(gWindows) ? gWindows[0] : nullptr, StringArg(req, 0),
+                                               StringArg(req, 1), StringArg(req, 2), StringArg(req, 3), &code);
+            AppendTestResult(req, code, result);
             break;
         }
 

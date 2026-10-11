@@ -1412,6 +1412,8 @@
     <ClInclude Include="..\ext\darkmodelib\src\Version.h" />
     <ClInclude Include="..\src\Canvas.h" />
     <ClInclude Include="..\src\DarkMode.h" />
+    <ClInclude Include="..\src\DocumentShare.h" />
+    <ClInclude Include="..\src\DriveClient.h" />
     <ClInclude Include="..\src\FindWindow.h" />
     <ClInclude Include="..\src\ImageSaveCropResize.h" />
     <ClInclude Include="..\src\Installer.h" />
@@ -1421,8 +1423,11 @@
     <ClInclude Include="..\src\Notifications.h" />
     <ClInclude Include="..\src\OverlayScrollbar.h" />
     <ClInclude Include="..\src\PageThumbnails.h" />
+    <ClInclude Include="..\src\PaperLibrary.h" />
     <ClInclude Include="..\src\RegistryPreview.h" />
     <ClInclude Include="..\src\RegistrySearchFilter.h" />
+    <ClInclude Include="..\src\ResearchFetch.h" />
+    <ClInclude Include="..\src\ResearchTools.h" />
     <ClInclude Include="..\src\ScreenshotCapture.h" />
     <ClInclude Include="..\src\SearchAndDDE.h" />
     <ClInclude Include="..\src\Settings.h" />
@@ -1618,6 +1623,8 @@
     <ClCompile Include="..\src\CustomZoomDialog.cpp" />
     <ClCompile Include="..\src\DarkMode.cpp" />
     <ClCompile Include="..\src\DocumentProperties.cpp" />
+    <ClCompile Include="..\src\DocumentShare.cpp" />
+    <ClCompile Include="..\src\DriveClient.cpp" />
     <ClCompile Include="..\src\EbookSettingsDialog.cpp" />
     <ClCompile Include="..\src\Favorites.cpp" />
     <ClCompile Include="..\src\FileThumbnails.cpp" />
@@ -1644,6 +1651,7 @@
     <ClCompile Include="..\src\OverlayScrollbar.cpp" />
     <ClCompile Include="..\src\PageGridDialog.cpp" />
     <ClCompile Include="..\src\PageThumbnails.cpp" />
+    <ClCompile Include="..\src\PaperLibrary.cpp" />
     <ClCompile Include="..\src\PdfTools.cpp" />
     <ClCompile Include="..\src\ReadAloud.cpp" />
     <ClCompile Include="..\src\ReadingAutoScroll.cpp" />
@@ -1652,6 +1660,8 @@
     <ClCompile Include="..\src\RefHoverPopup.cpp" />
     <ClCompile Include="..\src\RegistryPreview.cpp" />
     <ClCompile Include="..\src\RegistrySearchFilter.cpp" />
+    <ClCompile Include="..\src\ResearchFetch.cpp" />
+    <ClCompile Include="..\src\ResearchTools.cpp" />
     <ClCompile Include="..\src\Screenshot.cpp" />
     <ClCompile Include="..\src\ScreenshotCapture.cpp" />
     <ClCompile Include="..\src\SearchAndDDE.cpp" />

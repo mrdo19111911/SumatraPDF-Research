@@ -2033,6 +2033,7 @@ EXPORTS
 	cmark_node_new
 	cmark_node_next
 	cmark_node_set_on_enter
+	cmark_node_set_literal
 	cmark_node_set_url
 	cmark_node_unlink
 	cmark_parser_attach_syntax_extension

@@ -80,7 +80,7 @@ static void EnsureCmarkPluginsRegistered() {
 
 static cmark_parser* CreateMarkdownParser(Str data) {
     EnsureCmarkPluginsRegistered();
-    cmark_parser* parser = cmark_parser_new(CMARK_OPT_DEFAULT);
+    cmark_parser* parser = cmark_parser_new(CMARK_OPT_DEFAULT | CMARK_OPT_FOOTNOTES);
 
     // no "autoheaderid": its slug rules differ from GitHub's, so the ids it
     // makes don't match the "#anchor" links such documents carry.
@@ -533,12 +533,234 @@ static void AddHeadingAnchors(cmark_node* doc) {
     }
 }
 
+struct MarkdownMath {
+    Str source;
+    bool display;
+};
+
+static Str NormalizeMarkdownNotes(Str markdown) {
+    str::Builder out;
+    bool note = false;
+    bool fence = false;
+    Str rest = markdown;
+    while (len(rest)) {
+        Str line, next;
+        bool newline = str::CutChar(rest, '\n', &line, &next);
+        rest = next;
+        if (str::StartsWith(line, StrL("```")) || str::StartsWith(line, StrL("~~~"))) fence = !fence;
+        Str kind = line;
+        if (!fence && str::TrimPrefix(kind, StrL("!!! "))) {
+            Str label, title;
+            str::CutChar(kind, ' ', &label, &title);
+            TempStr upper = str::DupTemp(label);
+            str::ToUpperInPlace(upper);
+            if (str::Eq(upper, StrL("NOTE")) || str::Eq(upper, StrL("TIP")) || str::Eq(upper, StrL("IMPORTANT")) ||
+                str::Eq(upper, StrL("WARNING")) || str::Eq(upper, StrL("CAUTION"))) {
+                out.Append(fmt("> [!%s]\n", upper));
+                if (len(title)) out.Append(fmt("> %s\n", title));
+                note = true;
+                continue;
+            }
+        }
+        if (note && !fence && (str::StartsWith(line, StrL("    ")) || !len(line))) {
+            str::TrimPrefix(line, StrL("    "));
+            out.Append(StrL("> "));
+        } else if (len(line))
+            note = false;
+        out.Append(line);
+        if (newline) out.AppendChar('\n');
+    }
+    return out.TakeStr();
+}
+
+static Str MathMarker(int index) {
+    return fmt("SUMATRAMATHTOKEN%dENDTOKEN", index);
+}
+
+static Str ProtectMarkdownMath(Str markdown, Vec<MarkdownMath>& math) {
+    str::Builder out;
+    int fence = 0;
+    char fenceChar = 0;
+    bool lineStart = true;
+    for (int i = 0; i < len(markdown);) {
+        char c = markdown.s[i];
+        if (lineStart) {
+            int first = i;
+            while (first < len(markdown) && first - i < 4 && markdown.s[first] == ' ') first++;
+            if (first - i == 4 || c == '\t') {
+                int end = first;
+                while (end < len(markdown) && markdown.s[end] != '\n') end++;
+                out.Append(Str(markdown.s + i, end - i));
+                i = end;
+                lineStart = false;
+                continue;
+            }
+            int run = first;
+            if (first < len(markdown) && (markdown.s[first] == '`' || markdown.s[first] == '~')) {
+                while (run < len(markdown) && markdown.s[run] == markdown.s[first]) run++;
+                if (run - first >= 3 && (!fence || (markdown.s[first] == fenceChar && run - first >= fence))) {
+                    if (fence)
+                        fence = 0;
+                    else {
+                        fence = run - first;
+                        fenceChar = markdown.s[first];
+                    }
+                    int end = run;
+                    while (end < len(markdown) && markdown.s[end] != '\n') end++;
+                    out.Append(Str(markdown.s + i, end - i));
+                    i = end;
+                    lineStart = false;
+                    continue;
+                }
+            }
+        }
+        lineStart = c == '\n';
+        if (fence) {
+            out.AppendChar(c);
+            i++;
+            continue;
+        }
+        // Indented code and inline code retain literal TeX and dollar signs.
+        if (c == '`') {
+            int run = 1;
+            while (i + run < len(markdown) && markdown.s[i + run] == '`') run++;
+            int end = i + run;
+            while (end < len(markdown)) {
+                int n = 0;
+                while (end + n < len(markdown) && markdown.s[end + n] == '`') n++;
+                if (n == run) {
+                    end += n;
+                    break;
+                }
+                end += std::max(n, 1);
+            }
+            out.Append(Str(markdown.s + i, end - i));
+            i = end;
+            continue;
+        }
+        int open = 0;
+        Str close;
+        bool display = false;
+        if (c == '$') {
+            open = i + 1 < len(markdown) && markdown.s[i + 1] == '$' ? 2 : 1;
+            display = open == 2;
+            close = display ? StrL("$$") : StrL("$");
+            if (!display && (i + 1 >= len(markdown) || str::IsWs(markdown.s[i + 1]))) open = 0;
+        } else if (c == '\\' && i + 1 < len(markdown) && (markdown.s[i + 1] == '(' || markdown.s[i + 1] == '[')) {
+            open = 2;
+            display = markdown.s[i + 1] == '[';
+            close = display ? StrL("\\]") : StrL("\\)");
+        }
+        if (open) {
+            int end = i + open;
+            for (; end + len(close) <= len(markdown); end++) {
+                if (!display && markdown.s[end] == '\n') break;
+                if (markdown.s[end] == '\\' && close.s[0] != '\\') {
+                    end++;
+                    continue;
+                }
+                if (!str::EqN(Str(markdown.s + end, len(markdown) - end), close, len(close))) continue;
+                if (open == 1 &&
+                    (str::IsWs(markdown.s[end - 1]) || (end + 1 < len(markdown) && str::IsDigit(markdown.s[end + 1]))))
+                    continue;
+                if (end > i + open) {
+                    MarkdownMath item{Str(markdown.s + i + open, end - i - open), display};
+                    out.Append(MathMarker(len(math)));
+                    VecAppend(math, item);
+                    i = end + len(close);
+                    break;
+                }
+            }
+            if (i == end + len(close)) continue;
+        }
+        if (c == '\\' && i + 1 < len(markdown)) {
+            out.Append(Str(markdown.s + i, 2));
+            i += 2;
+        } else {
+            out.AppendChar(c);
+            i++;
+        }
+    }
+    return out.TakeStr();
+}
+
+static Str MathHtml(const MarkdownMath& math) {
+    str::Builder out;
+    out.Append(math.display ? StrL("<span class=\"sumatra-math display\">") : StrL("<span class=\"sumatra-math\">"));
+    for (int i = 0; i < len(math.source); i++) {
+        char c = math.source.s[i];
+        if (c == '&')
+            out.Append(StrL("&amp;"));
+        else if (c == '<')
+            out.Append(StrL("&lt;"));
+        else if (c == '>')
+            out.Append(StrL("&gt;"));
+        else
+            out.AppendChar(c);
+    }
+    out.Append(StrL("</span>"));
+    return out.TakeStr();
+}
+
+static void RestoreMarkdownMath(cmark_node* parent, const Vec<MarkdownMath>& math) {
+    for (cmark_node* node = cmark_node_first_child(parent); node;) {
+        cmark_node* next = cmark_node_next(node);
+        if (cmark_node_get_type(node) != CMARK_NODE_TEXT) {
+            RestoreMarkdownMath(node, math);
+            node = next;
+            continue;
+        }
+        Str text = CmarkLiteral(node);
+        bool changed = false;
+        while (len(text)) {
+            int pos = str::IndexOf(text, StrL("SUMATRAMATHTOKEN"));
+            if (pos < 0) break;
+            int end = pos + len(StrL("SUMATRAMATHTOKEN"));
+            int digitsStart = end;
+            int match = 0;
+            while (end < len(text) && text.s[end] >= '0' && text.s[end] <= '9' && match < len(math)) {
+                match = match * 10 + text.s[end++] - '0';
+            }
+            if (end == digitsStart || match >= len(math) ||
+                !str::StartsWith(Str(text.s + end, len(text) - end), StrL("ENDTOKEN")))
+                break;
+            if (pos) {
+                cmark_node* before = cmark_node_new(CMARK_NODE_TEXT);
+                cmark_node_set_literal(before, CStrTemp(Str(text.s, pos)));
+                cmark_node_insert_before(node, before);
+            }
+            cmark_node* formula = cmark_node_new(CMARK_NODE_CUSTOM_INLINE);
+            Str html = MathHtml(math[match]);
+            cmark_node_set_on_enter(formula, CStrTemp(html));
+            str::Free(html);
+            cmark_node_insert_before(node, formula);
+            int used = end + len(StrL("ENDTOKEN"));
+            text = Str(text.s + used, len(text) - used);
+            changed = true;
+        }
+        if (changed) {
+            if (len(text))
+                cmark_node_set_literal(node, CStrTemp(text));
+            else
+                cmark_node_free(node);
+        }
+        node = next;
+    }
+}
+
 static char* MarkdownToHtmlBody(Str markdown) {
     if (len(markdown) == 0) {
         return nullptr;
     }
 
-    cmark_parser* parser = CreateMarkdownParser(markdown);
+    Vec<MarkdownMath> math;
+    Str normalized = NormalizeMarkdownNotes(markdown);
+    defer {
+        str::Free(normalized);
+    };
+    Str protectedText = ProtectMarkdownMath(normalized, math);
+    cmark_parser* parser = CreateMarkdownParser(protectedText);
+    str::Free(protectedText);
     cmark_node* doc = cmark_parser_finish(parser);
     if (!doc) {
         cmark_parser_free(parser);
@@ -548,10 +770,11 @@ static char* MarkdownToHtmlBody(Str markdown) {
     RewriteMarkdownLinks(doc);
     PreserveSafeEmptyAnchors(doc);
     AddHeadingAnchors(doc);
+    RestoreMarkdownMath(doc, math);
 
     // Render before cmark_parser_free(); the extensions list is owned by the parser.
     cmark_llist* extensions = cmark_parser_get_syntax_extensions(parser);
-    char* body = cmark_render_html(doc, CMARK_OPT_DEFAULT, extensions);
+    char* body = cmark_render_html(doc, CMARK_OPT_DEFAULT | CMARK_OPT_FOOTNOTES, extensions);
     cmark_parser_free(parser);
     cmark_node_free(doc);
     return body;
@@ -571,14 +794,12 @@ Str MarkdownToHtmlPage(Str markdown) {
              "<style>"));
     html.Append(Str(MarkdownPageCssTemp()));
     html.Append(StrL("</style></head><body>"));
-    int nMermaid = RewriteMermaidCodeBlocks(html, Str(body));
+    RewriteMermaidCodeBlocks(html, Str(body));
     cmark_mem* mem = cmark_get_default_mem_allocator();
     mem->free(body);
 
-    // Mermaid diagrams need JS (WebView2). Fixed-page MuPDF path has no scripts.
-    if (nMermaid > 0) {
-        html.Append(Str(kMermaidBootstrap, (int)(sizeof(kMermaidBootstrap) - 1)));
-    }
+    // A small bootstrap lazily loads only the renderers this document uses.
+    html.Append(StrL("<script defer src=\"https://sumatrapdf.markdown/_sumatra_md/runtime.js\"></script>"));
     html.Append(StrL("</body></html>"));
 
     return html.TakeStr();
@@ -723,4 +944,21 @@ bool MarkdownToc_UnitTestMermaid() {
     ok = ok && (nPlain == 0) && str::Contains(plain, StrL("language-js")) &&
          !str::Contains(plain, StrL("pre class=\"mermaid\""));
     return ok;
+}
+
+bool MarkdownToc_UnitTestExtensions() {
+    Str md = StrL(
+        "Inline $a_b < c$ and \\(x^2\\).\n\n$$\\frac{x_1}{2}$$\n\n"
+        "```python\nprint('$literal$')\n```\n\n    $indented$\n\n"
+        "A reference[^one].\n\n[^one]: A footnote.\n\n> [!NOTE]\n> A note.\n");
+    char* body = MarkdownToHtmlBody(md);
+    if (!body) return false;
+    defer {
+        free(body);
+    };
+    Str html(body);
+    return str::Contains(html, StrL("sumatra-math")) && str::Contains(html, StrL("a_b &lt; c")) &&
+           str::Contains(html, StrL("\\frac{x_1}{2}")) && str::Contains(html, StrL("$literal$")) &&
+           str::Contains(html, StrL("$indented$")) && !str::Contains(html, StrL("SUMATRAMATHTOKEN")) &&
+           str::Contains(html, StrL("footnote"));
 }

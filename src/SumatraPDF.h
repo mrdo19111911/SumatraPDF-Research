@@ -347,6 +347,7 @@ SettingsApplyState GetSettingsApplyState();
 void ApplyChangedSettingsAndRelayout(const SettingsApplyState& before);
 
 void SwitchToDisplayMode(MainWindow* win, DisplayMode displayMode, bool keepContinuous = false);
+void UpdatePortraitPdfView(MainWindow* win);
 void OnDocumentVerticalScrollIntent(MainWindow* win, bool down);
 void DismissNextFileScrollHint(MainWindow* win);
 void MainWindowRerender(MainWindow* win, bool includeNonClientArea = false);

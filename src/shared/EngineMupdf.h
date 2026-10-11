@@ -81,6 +81,12 @@ class EngineMupdf : public EngineBase {
 
     RectF PageMediabox(int pageNo) override;
     RectF PageContentBox(int pageNo, RenderTarget target = RenderTarget::View) override;
+    RectF PageReadingContentBox(int pageNo) override;
+    enum class ContentBounds {
+        All,
+        Reading
+    };
+    RectF ContentBox(int pageNo, ContentBounds bounds);
     void GetPdfPageBoxes(int pageNo, Vec<PdfPageBox>& out) override;
 
     Pixmap* RenderPage(RenderPageArgs& args) override;

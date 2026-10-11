@@ -123,6 +123,12 @@
     <ClInclude Include="..\src\DarkMode.h">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\DocumentShare.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\DriveClient.h">
+      <Filter>src</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\FindWindow.h">
       <Filter>src</Filter>
     </ClInclude>
@@ -150,10 +156,19 @@
     <ClInclude Include="..\src\PageThumbnails.h">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\PaperLibrary.h">
+      <Filter>src</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\RegistryPreview.h">
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="..\src\RegistrySearchFilter.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\ResearchFetch.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\ResearchTools.h">
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="..\src\ScreenshotCapture.h">
@@ -653,6 +668,12 @@
     <ClCompile Include="..\src\DocumentProperties.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\DocumentShare.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\DriveClient.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\EbookSettingsDialog.cpp">
       <Filter>src</Filter>
     </ClCompile>
@@ -731,6 +752,9 @@
     <ClCompile Include="..\src\PageThumbnails.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\PaperLibrary.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\PdfTools.cpp">
       <Filter>src</Filter>
     </ClCompile>
@@ -753,6 +777,12 @@
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="..\src\RegistrySearchFilter.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\ResearchFetch.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\ResearchTools.cpp">
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="..\src\Screenshot.cpp">

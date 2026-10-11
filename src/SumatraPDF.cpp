@@ -115,6 +115,9 @@
 #include "SelectionTranslate.h"
 #include "SelectionHandlers.h"
 #include "GoogleLens.h"
+#include "DocumentShare.h"
+#include "ResearchTools.h"
+#include "PaperLibrary.h"
 #include "CommandPalette.h"
 #include "SumatraDialogs.h"
 #include "NavFilesInFolder.h"
@@ -532,6 +535,12 @@ void SwitchToDisplayMode(MainWindow* win, DisplayMode displayMode, bool keepCont
         return;
     }
 
+    WindowTab* tab = win->CurrentTab();
+    if (tab && tab->portraitViewAuto) {
+        tab->portraitViewOnOpenPending = true;
+        UpdatePortraitPdfView(win);
+        return;
+    }
     win->ctrl->SetDisplayMode(displayMode, keepContinuous);
     UpdateToolbarState(win);
 }
@@ -892,6 +901,7 @@ static void UpdateSidebarDisplayState(WindowTab* tab, FileState* fs) {
     ReportIf(!tab);
     MainWindow* win = tab->win;
     fs->showToc = tab->showToc;
+    fs->autoContentReading = tab->portraitViewAuto;
     str::ReplaceWithCopy(&fs->sidebarView, SidebarViewToStr(tab->sidebarView));
     if (win->tocLoaded && tab == win->CurrentTab()) {
         TocTree* tocTree = tab->ctrl->GetToc();
@@ -1647,7 +1657,7 @@ void SetFullscreenToolbarMode(int mode) {
     gSettings->fullscreen.showToolbar = (mode != kToolbarHide);
 }
 
-SeqStrings gToolbarPositionNames = "top\0bottom\0";
+SeqStrings gToolbarPositionNames = "top\0bottom\0auto\0right\0";
 
 int ToolbarPositionFromPrefs() {
     int idx = SeqStrIndexIS(gToolbarPositionNames, gSettings->toolbarPosition);
@@ -2034,6 +2044,7 @@ void ControllerCallbackHandler::PageNoChanged(DocController* ctrl, int pageNo) {
             UpdateToolbarPageText(win, win->ctrl->PageCount(), true);
         }
         UpdateTabPageText(win->CurrentTab());
+        if (str::EqI(gSettings->toolbarPosition, StrL("auto"))) ScheduleUiUpdate(win, kUiRelayout);
     }
 
     // Markdown multi-file: each .md is a "page". Keep tab path/title/tooltip and
@@ -2418,9 +2429,52 @@ static void ApplyPageAspectView(EngineBase* engine, DisplayMode* modeOut, float*
 }
 
 // Document is represented as DocController. Replace current DocController (if any) with ctrl
-// LoadDocument Relayouts before RelayoutFrame has given the canvas its final
-// size (hidden frame, HDWP 0x0 WM_SIZE). Relayout then leaves pendingRelayout.
-// Call after the canvas HWND has settled so fit zoom can be computed.
+void UpdatePortraitPdfView(MainWindow* win) {
+    WindowTab* tab = win->CurrentTab();
+    DisplayModel* dm = win->AsFixed();
+    if (!tab || !dm || tab->updatingPortraitView || !dm->ViewportReadyForRelayout() || win->InPresentation()) {
+        return;
+    }
+    bool firstView = tab->portraitViewOnOpenPending;
+    if (!firstView && !tab->portraitViewAuto) {
+        return;
+    }
+    tab->portraitViewOnOpenPending = false;
+    EngineBase* engine = dm->GetEngine();
+    if (!engine || !str::EqI(engine->defaultExt, StrL(".pdf"))) {
+        tab->portraitViewAuto = false;
+        return;
+    }
+    int pageNo = dm->CurrentPageNo();
+    RectF page = engine->Transform(engine->PageMediabox(pageNo), pageNo, 1.0f, dm->rotation);
+    if (page.dx <= 0 || page.dy <= 0) {
+        tab->portraitViewAuto = false;
+        return;
+    }
+    Size viewport = win->GetViewPortSize();
+    Size reserved = ToolbarReservedSpace(win);
+    viewport.dx += reserved.dx;
+    viewport.dy += reserved.dy;
+    DisplayMode mode = PaperMapHwnd(win) ? DisplayMode::SinglePage
+                                         : dm->AutoReadingMode(viewport, HwndGetFullscreenRect(win->hwndFrame).Size());
+    if (page.dx >= page.dy) {
+        mode = DisplayMode::SinglePage;
+    }
+    tab->portraitViewAuto = true;
+    if (!firstView && dm->GetDisplayMode() == mode) {
+        return;
+    }
+    // Portrait monitors always use one page; follow the available canvas on landscape monitors.
+    tab->updatingPortraitView = true;
+    defer {
+        tab->updatingPortraitView = false;
+    };
+    dm->SetDisplayMode(mode);
+    dm->SetZoomVirtual(kZoomFitContentHeight, nullptr);
+    UpdateUiForCurrentTab(win);
+}
+
+// Finish the first layout after a hidden or initially empty canvas is sized.
 static void FinishPendingDocumentRelayout(MainWindow* win) {
     if (!IsMainWindowValidAndNotClosing(win)) {
         return;
@@ -2436,6 +2490,7 @@ static void FinishPendingDocumentRelayout(MainWindow* win) {
     if (dm->pendingRelayout) {
         return;
     }
+    UpdatePortraitPdfView(win);
     if (dm->hasPendingScroll) {
         dm->hasPendingScroll = false;
         dm->SetScrollState(dm->pendingScroll);
@@ -2555,6 +2610,13 @@ static void ReplaceDocumentInCurrentTab(LoadArgs* args, DocController* ctrl, Fil
     AbortFinding(args->win, true);
 
     DocController* prevCtrl = win->ctrl;
+    bool sameDocument = prevCtrl && path::IsSame(prevCtrl->GetFilePath(), path);
+    // Every newly opened PDF starts in AUTO; reload preserves an intentional
+    // manual toggle in this tab. Explicit command-line view/zoom still wins.
+    bool autoReading = sameDocument ? tab->portraitViewAuto : true;
+    tab->portraitViewAuto =
+        autoReading && args->initialDisplayMode == DisplayMode::Automatic && args->initialZoom == kInvalidZoom;
+    tab->portraitViewOnOpenPending = ctrl && tab->portraitViewAuto;
     tab->ctrl = ctrl;
     win->ctrl = tab->ctrl;
 
@@ -2820,6 +2882,7 @@ static void ReplaceDocumentInCurrentTab(LoadArgs* args, DocController* ctrl, Fil
         return;
     }
     SetSidebarVisibility(win, showToc, gSettings->showFavorites);
+    UpdatePortraitPdfView(win);
     if (dm) {
         if (dm->pendingRelayout) {
             // canvas not yet sized; RelayoutFrame / ShowWindow WM_SIZE will
@@ -3207,6 +3270,7 @@ static void CreateFrameLayout(MainWindow* win) {
     win->menuSlot->mapRtlX = true;
     win->toolbarTopSlot = new HwndSlot();
     win->toolbarBottomSlot = new HwndSlot();
+    win->toolbarRightSlot = new HwndSlot();
     CreateCaptionLayout(win);
 
     // the webview is expensive to resize, so this one only moves the panes
@@ -3240,7 +3304,11 @@ static void CreateFrameLayout(MainWindow* win) {
     chrome->AddChild(win->tabsSlot);
     chrome->AddChild(win->menuSlot);
     chrome->AddChild(win->toolbarTopSlot);
-    chrome->AddChild(win->frameLayout, 1);
+    auto* readingRow = new HBox();
+    readingRow->alignCross = CrossAxisAlign::Stretch;
+    readingRow->AddChild(win->frameLayout, 1);
+    readingRow->AddChild(win->toolbarRightSlot);
+    chrome->AddChild(readingRow, 1);
     chrome->AddChild(win->toolbarBottomSlot);
     win->chromeLayout = chrome;
     FrameSyncSplitters(win);
@@ -3680,6 +3748,7 @@ void UpdateAfterThemeChange() {
         RedrawWindow(win->hwndFrame, nullptr, nullptr, flags);
     }
     CommandPaletteUpdateTheme();
+    UpdateResearchTheme();
     UpdateDocumentColors();
 }
 
@@ -4122,6 +4191,7 @@ MainWindow* LoadDocumentFinish(LoadArgs* args) {
         // asynchronously, so RestoreTabOnStartup can't do it after the load)
         SetTabState(currTab, args->tabState);
     }
+    UpdatePortraitPdfView(win);
     // forceReuse / targetTab loads skip CloseDocumentInCurrentTab, so the
     // previous document's watcher can still be set (e.g. open next file in
     // folder, multi-file open). Always drop it before re-subscribing.
@@ -6852,6 +6922,8 @@ static void CreateLnkShortcut(MainWindow* win) {
         zoomVirtual = StrL("fitwidth");
     } else if (kZoomFitHeight == ctrl->GetZoomVirtual()) {
         zoomVirtual = StrL("fitheight");
+    } else if (kZoomFitContentHeight == ctrl->GetZoomVirtual()) {
+        zoomVirtual = StrL("\"fit content height\"");
     } else if (kZoomFitContent == ctrl->GetZoomVirtual()) {
         zoomVirtual = StrL("fitcontent");
     } else if (kZoomFitVisible == ctrl->GetZoomVirtual()) {
@@ -7664,9 +7736,10 @@ static bool IsUiLayoutEq(UILayout* s1, UILayout* s2) {
     return s1->rc == s2->rc && s1->presentation == s2->presentation && s1->tabsInTitlebar == s2->tabsInTitlebar &&
            s1->isFullScreen == s2->isFullScreen && s1->tabsVisible == s2->tabsVisible &&
            s1->isToolbarVisible == s2->isToolbarVisible && s1->isToolbarOverlay == s2->isToolbarOverlay &&
+           s1->toolbarSize == s2->toolbarSize && s1->toolbarRight == s2->toolbarRight &&
            s1->sidebarTopVisible == s2->sidebarTopVisible && s1->sidebarBottomVisible == s2->sidebarBottomVisible &&
            s1->favoritesAsTab == s2->favoritesAsTab && s1->showMenuBarRebar == s2->showMenuBarRebar &&
-           s1->aiChatVisible == s2->aiChatVisible && s1->aiChatDx == s2->aiChatDx &&
+           s1->aiChatVisible == s2->aiChatVisible && s1->paperMap == s2->paperMap && s1->aiChatDx == s2->aiChatDx &&
            s1->sidebarOnRight == s2->sidebarOnRight;
 }
 
@@ -7805,6 +7878,21 @@ static bool RelayoutFrame(MainWindow* win, bool updateToolbars, int sidebarDx) {
     if (rc.IsEmpty()) {
         return false;
     }
+    int toolbarChromeDy = 0;
+    bool captionVisible = !win->presentation && !win->isFullScreen && win->tabsInTitlebar;
+    bool tabsBarVisible = !win->presentation && !win->isFullScreen && !win->tabsInTitlebar && win->tabsVisible;
+    if (captionVisible) {
+        SyncCaptionLayout(win);
+        toolbarChromeDy += win->captionLayout->Layout(ExpandInf()).dy;
+    }
+    if (tabsBarVisible) toolbarChromeDy += GetTabbarHeight(win->hwndFrame);
+    if (IsShowingMenuBarRebar(win) && (!win->tabsInTitlebar || win->isFullScreen))
+        toolbarChromeDy += GetMenuBarRebarHeight(win);
+    int toolbarPanelsDx =
+        (win->uiState.sidebarTopVisible || win->uiState.sidebarBottomVisible) ? win->sidebarDx + kSplitterDx : 0;
+    if (win->uiState.aiChatVisible || PaperMapHwnd(win)) toolbarPanelsDx += win->aiChatDx + kSplitterDx;
+    Size toolbarSize = UpdateToolbarPlacement(win, {rc.dx, std::max(1, rc.dy - toolbarChromeDy)}, toolbarPanelsDx);
+    bool toolbarRight = win->toolbarVirt && win->toolbarVirt->vertical;
     // build a snapshot of all state that affects layout
     UILayout curState;
     curState.rc = rc;
@@ -7814,6 +7902,8 @@ static bool RelayoutFrame(MainWindow* win, bool updateToolbars, int sidebarDx) {
     curState.tabsVisible = win->tabsVisible;
     curState.isToolbarVisible = win->isToolbarVisible;
     curState.isToolbarOverlay = win->isToolbarOverlay;
+    curState.toolbarSize = toolbarSize;
+    curState.toolbarRight = toolbarRight;
     curState.sidebarTopVisible = win->uiState.sidebarTopVisible;
     bool favAsTabNow = win->CurrentTab() && win->CurrentTab()->IsFavoritesTab();
     // favoritesAsTab must differ so switching to and from the Favorites tab never
@@ -7822,6 +7912,7 @@ static bool RelayoutFrame(MainWindow* win, bool updateToolbars, int sidebarDx) {
     curState.favoritesAsTab = favAsTabNow;
     curState.showMenuBarRebar = IsShowingMenuBarRebar(win);
     curState.aiChatVisible = win->uiState.aiChatVisible;
+    curState.paperMap = PaperMapHwnd(win);
     curState.aiChatDx = win->aiChatDx;
     curState.sidebarOnRight = SidebarOnRightLayout();
 
@@ -7863,7 +7954,8 @@ static bool RelayoutFrame(MainWindow* win, bool updateToolbars, int sidebarDx) {
         bool favAsTab = cur && cur->IsFavoritesTab();
         bool topVis = !favAsTab && ui.sidebarTopVisible;
         bool bottomVis = !favAsTab && ui.sidebarBottomVisible;
-        bool aiVis = !favAsTab && ui.aiChatVisible;
+        HWND map = PaperMapHwnd(win);
+        bool aiVis = !favAsTab && ui.aiChatVisible && !map;
         win->sidebarSplitter->SetIsVisible(topVis || bottomVis);
         HwndSetVisible(win->sidebarTop->hwnd, topVis);
         win->sidebarPanelsSplitter->SetIsVisible(topVis && bottomVis);
@@ -7874,8 +7966,9 @@ static bool RelayoutFrame(MainWindow* win, bool updateToolbars, int sidebarDx) {
         HwndSetVisible(win->hwndCanvas, !favAsTab);
         if (win->hwndAiChatBox) {
             HwndSetVisible(win->hwndAiChatBox, aiVis);
-            win->aiChatSplitter->SetIsVisible(aiVis);
         }
+        win->aiChatSplitter->SetIsVisible(aiVis || map);
+        RelayoutPaperMap(win);
     }
 
     if (gRedrawLog) {
@@ -7940,13 +8033,15 @@ static bool RelayoutFrame(MainWindow* win, bool updateToolbars, int sidebarDx) {
     bool topVisible = !favAsTab && win->uiState.sidebarTopVisible;
     bool bottomVisible = !favAsTab && win->uiState.sidebarBottomVisible;
     bool sidebarVisible = topVisible || bottomVisible;
-    bool aiChatVisible = !favAsTab && win->uiState.aiChatVisible && win->hwndAiChatBox;
+    HWND rightPanel = PaperMapHwnd(win);
+    if (!rightPanel && win->uiState.aiChatVisible) rightPanel = win->hwndAiChatBox;
+    bool aiChatVisible = !favAsTab && rightPanel;
     bool showCaption = !win->presentation && !win->isFullScreen && win->tabsInTitlebar;
     bool showingMenuBar = IsShowingMenuBarRebar(win);
     bool showTabsBar = !win->presentation && !win->isFullScreen && !win->tabsInTitlebar && win->tabsVisible;
     bool showMenuRebar = showingMenuBar && (!win->tabsInTitlebar || win->isFullScreen);
     bool showToolbar = win->isToolbarVisible;
-    bool toolbarBottom = showToolbar && ToolbarAtBottom();
+    bool toolbarBottom = showToolbar && !toolbarRight && ToolbarAtBottom();
 
     int tabHeight = GetTabbarHeight(win->hwndFrame);
     if (showCaption) {
@@ -7956,18 +8051,20 @@ static bool RelayoutFrame(MainWindow* win, bool updateToolbars, int sidebarDx) {
     int menuBarDy = showMenuRebar ? GetMenuBarRebarHeight(win) : 0;
     int rebarDy = 0;
     if (showToolbar && win->hwndToolbar) {
-        rebarDy = HwndWindowRect(win->hwndToolbar).dy;
+        rebarDy = toolbarRight ? 0 : toolbarSize.dy;
     }
 
     SetVis(win->captionLayout, showCaption);
     SetVis(win->tabsSlot, showTabsBar);
     SetVis(win->menuSlot, showMenuRebar);
-    SetVis(win->toolbarTopSlot, showToolbar && !toolbarBottom);
+    SetVis(win->toolbarTopSlot, showToolbar && !toolbarBottom && !toolbarRight);
     SetVis(win->toolbarBottomSlot, showToolbar && toolbarBottom);
+    SetVis(win->toolbarRightSlot, showToolbar && toolbarRight);
     win->tabsSlot->dy = tabHeight;
     win->menuSlot->dy = menuBarDy;
     win->toolbarTopSlot->dy = rebarDy;
     win->toolbarBottomSlot->dy = rebarDy;
+    win->toolbarRightSlot->dx = toolbarSize.dx;
 
     // leave at least this much canvas for the document when sidebar is open
     constexpr int kMinDocCanvasDx = 200;
@@ -7987,7 +8084,8 @@ static bool RelayoutFrame(MainWindow* win, bool updateToolbars, int sidebarDx) {
         }
         // never too narrow; max leaves kMinDocCanvasDx for the document
         // (was hard-capped at half the frame, which cut long favorite names)
-        int maxSidebarDx = std::max(kSidebarMinDx, rc.dx - kMinDocCanvasDx);
+        int maxSidebarDx =
+            std::max(kSidebarMinDx, rc.dx - kMinDocCanvasDx - (showToolbar && toolbarRight ? toolbarSize.dx : 0));
         sidebarDxApplied = limitValue(sidebarDxApplied, kSidebarMinDx, maxSidebarDx);
         win->sidebarDx = sidebarDxApplied; // remember what's applied
     }
@@ -8036,7 +8134,8 @@ static bool RelayoutFrame(MainWindow* win, bool updateToolbars, int sidebarDx) {
         if (aiChatDx <= 0) {
             aiChatDx = rc.dx * 3 / 8;
         }
-        int availDx = rc.dx - (sidebarVisible ? sidebarDxApplied + kSplitterDx : 0);
+        int availDx = rc.dx - (sidebarVisible ? sidebarDxApplied + kSplitterDx : 0) -
+                      (showToolbar && toolbarRight ? toolbarSize.dx : 0);
         aiChatDx = limitValue(aiChatDx, kSidebarMinDx, availDx / 2);
         win->aiChatDx = aiChatDx;
     }
@@ -8067,15 +8166,17 @@ static bool RelayoutFrame(MainWindow* win, bool updateToolbars, int sidebarDx) {
              updateToolbars && showCaption && !capTwoRow);
     BindSlot(win->capTabsRow2, win->tabsCtrl ? win->tabsCtrl->hwnd : nullptr, &dh,
              updateToolbars && capTwoRow && capHasFileTabs);
-    BindSlot(win->toolbarTopSlot, win->hwndToolbar, &dh, updateToolbars && showToolbar && !toolbarBottom);
+    BindSlot(win->toolbarTopSlot, win->hwndToolbar, &dh,
+             updateToolbars && showToolbar && !toolbarBottom && !toolbarRight);
     BindSlot(win->toolbarBottomSlot, win->hwndToolbar, &dh, updateToolbars && showToolbar && toolbarBottom);
+    BindSlot(win->toolbarRightSlot, win->hwndToolbar, &dh, updateToolbars && showToolbar && toolbarRight);
     HWND topHwnd = win->sidebarTop->hwnd;
     HWND bottomHwnd = win->sidebarBottom->hwnd;
     BindSlot(win->sidebarTopSlot, topHwnd, &dh, topVisible && !isFrameResize && !isSplitterDrag);
     BindSlot(win->sidebarBottomSlot, bottomHwnd, &dh, bottomVisible && !isFrameResize && !isSplitterDrag);
     BindSlot(win->favoritesTabSlot, win->favoritesTabPanel->hwnd, &dh, favAsTab);
     BindSlot(win->canvasSlot, win->hwndCanvas, &dh, !discardCanvasBits);
-    BindSlot(win->aiChatSlot, win->hwndAiChatBox, &dh, aiChatVisible);
+    BindSlot(win->aiChatSlot, rightPanel, &dh, aiChatVisible);
 
     win->chromeLayout->Layout(Tight({rc.dx, rc.dy}));
     win->chromeLayout->SetBounds(rc);
@@ -8100,10 +8201,10 @@ static bool RelayoutFrame(MainWindow* win, bool updateToolbars, int sidebarDx) {
         }
     }
 
-    HwndSlot* chromeSlots[] = {win->tabsSlot,          win->menuSlot,       win->toolbarTopSlot,
-                               win->toolbarBottomSlot, win->capMenuSlot,    win->capTabsRow1,
-                               win->capTabsRow2,       win->sidebarTopSlot, win->sidebarBottomSlot,
-                               win->favoritesTabSlot,  win->canvasSlot,     win->aiChatSlot};
+    HwndSlot* chromeSlots[] = {
+        win->tabsSlot,         win->menuSlot,    win->toolbarTopSlot, win->toolbarBottomSlot, win->toolbarRightSlot,
+        win->capMenuSlot,      win->capTabsRow1, win->capTabsRow2,    win->sidebarTopSlot,    win->sidebarBottomSlot,
+        win->favoritesTabSlot, win->canvasSlot,  win->aiChatSlot};
     for (HwndSlot* s : chromeSlots) {
         ClearSlotDefer(s);
     }
@@ -8170,7 +8271,7 @@ static bool RelayoutFrame(MainWindow* win, bool updateToolbars, int sidebarDx) {
         // (issue #5866). Matches EndFrameRedrawSuppression, which has always done this.
         RedrawWindow(win->hwndFrame, nullptr, nullptr, RDW_ERASE | RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_FRAME);
     }
-    if (win->uiState.aiChatVisible && win->hwndAiChatBox) {
+    if (win->uiState.aiChatVisible && win->hwndAiChatBox && !PaperMapHwnd(win)) {
         RelayoutAIChatPanel(win);
     }
     // A frame-size drag does not move the splitter; invalidating it paints a
@@ -8225,6 +8326,8 @@ static bool RelayoutFrame(MainWindow* win, bool updateToolbars, int sidebarDx) {
     // above, so they don't paint over it; visibility is driven by mouse
     // proximity, not by relayout
     if (win->isToolbarOverlay && updateToolbars) {
+        SetWindowPos(win->hwndToolbar, nullptr, 0, 0, toolbarSize.dx, toolbarSize.dy,
+                     SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
         PositionOverlayToolbar(win);
         if (win->toolbarOverlayShown) {
             RedrawWindow(win->hwndToolbar, nullptr, nullptr, RDW_ERASE | RDW_INVALIDATE | RDW_ALLCHILDREN);
@@ -8908,6 +9011,9 @@ static void ShowZoomNotification(MainWindow* win, float zoomLevel) {
 }
 
 static void ShowViewModeNotification(MainWindow* win, int cmdId) {
+    if (win->CurrentTab() && win->CurrentTab()->portraitViewAuto) {
+        return;
+    }
     NotificationWnd* wnd = GetNotificationForGroup(win->hwndCanvas, kNotifPageInfo);
     if (wnd) {
         return;
@@ -10873,6 +10979,9 @@ static TempStr ZoomArgTemp(DocController* ctrl) {
     if (kZoomFitHeight == zoom) {
         return StrL("fit height");
     }
+    if (kZoomFitContentHeight == zoom) {
+        return StrL("fit content height");
+    }
     if (kZoomFitContent == zoom) {
         return StrL("fit content");
     }
@@ -12325,6 +12434,49 @@ static LRESULT FrameOnCommand(MainWindow* win, HWND hwnd, UINT msg, WPARAM wp, L
             logf("CmdAIChatWithClaudeCode dispatched\n");
             OnAIChatToggle(win, (int)AIChatBackend::Claude);
             break;
+        case CmdClearAIChat:
+            ClearAIChat(win);
+            break;
+        case CmdResearchTools:
+            OnResearchTools(win);
+            break;
+        case CmdResearchNarration:
+            OnResearchTools(win, ResearchAction::Narration);
+            break;
+        case CmdResearchExportText:
+            OnResearchTools(win, ResearchAction::ExportText);
+            break;
+        case CmdResearchExportMp3:
+            OnResearchTools(win, ResearchAction::ExportMp3);
+            break;
+        case CmdResearchAsk:
+        case CmdResearchSelection:
+        case CmdResearchSymbols:
+        case CmdResearchCompare:
+        case CmdResearchVersions:
+        case CmdResearchFigure:
+        case CmdResearchReading:
+            OnResearchAssistant(win, (PaperAction)(cmdId - CmdResearchAsk));
+            break;
+        case CmdPaperMap:
+            TogglePaperMap(win);
+            break;
+        case CmdIncreaseTextSize:
+        case CmdDecreaseTextSize:
+            ChangeEbookTextSize(win, cmdId == CmdIncreaseTextSize ? 2 : -2);
+            break;
+        case CmdConnectedPapers:
+            OpenResearchBrowser(win, 0);
+            break;
+        case CmdArxivSearch:
+            OpenPaperLibrary(win, LibraryMode::Search);
+            break;
+        case CmdCollectPapers:
+            OpenPaperLibrary(win, LibraryMode::Collect);
+            break;
+        case CmdSciHub:
+            OpenResearchBrowser(win, 1);
+            break;
 
         case CmdAIChatWithGrokBuild:
             logf("CmdAIChatWithGrokBuild dispatched\n");
@@ -12531,6 +12683,23 @@ static LRESULT FrameOnCommand(MainWindow* win, HWND hwnd, UINT msg, WPARAM wp, L
         case CmdZoomToSelection:
             ZoomToSelection(win);
             break;
+
+        case CmdAutoContentReading: {
+            if (!dm || !str::EqI(dm->GetEngine()->defaultExt, StrL(".pdf"))) {
+                break;
+            }
+            bool enable = !tab->portraitViewAuto;
+            tab->portraitViewAuto = enable;
+            tab->portraitViewOnOpenPending = enable;
+            if (enable) {
+                UpdatePortraitPdfView(win);
+            } else {
+                dm->SetZoomVirtual(kZoomFitPage, nullptr);
+                UpdateUiForCurrentTab(win);
+            }
+            UpdateTabFileDisplayStateForTab(tab);
+            ScheduleSaveSettings();
+        } break;
 
         case CmdSinglePageView:
             SwitchToDisplayMode(win, DisplayMode::SinglePage, true);
@@ -13133,6 +13302,12 @@ static LRESULT FrameOnCommand(MainWindow* win, HWND hwnd, UINT msg, WPARAM wp, L
 
         case CmdSendByEmail:
             SendAsEmailAttachment(tab);
+            break;
+        case CmdGoogleDrive:
+            OnGoogleDrive(win);
+            break;
+        case CmdSendToZalo:
+            OnSendToZalo(win);
             break;
 
         case CmdProperties: {
@@ -13946,6 +14121,10 @@ static LRESULT FrameOnCommand(MainWindow* win, HWND hwnd, UINT msg, WPARAM wp, L
 
         case CmdToggleLightDarkTheme:
             ToggleLightDarkTheme();
+            ScheduleSaveSettings();
+            break;
+        case CmdToggleReadingDarkMode:
+            ToggleReadingDarkMode();
             ScheduleSaveSettings();
             break;
 
@@ -15157,6 +15336,7 @@ static LRESULT CALLBACK WndProcSumatraFrame(HWND hwnd, UINT msg, WPARAM wp, LPAR
             if (win) {
                 RememberDefaultWindowPosition(win);
                 win->NotifyWindowMoved();
+                UpdatePortraitPdfView(win);
             }
             break;
 
@@ -15312,6 +15492,7 @@ static LRESULT CALLBACK WndProcSumatraFrame(HWND hwnd, UINT msg, WPARAM wp, LPAR
             // WM_DPICHANGED (issue #4581).
             if (win) {
                 ResizeFullScreenToCurrentDisplay(win);
+                UpdatePortraitPdfView(win);
             }
             ScheduleDpiRefreshAfterDisplayChange();
             return 0;

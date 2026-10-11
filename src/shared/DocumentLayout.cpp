@@ -278,6 +278,11 @@ static void RelayoutRows(DocumentLayout& layout, bool isFitContent) {
             }
         }
         currPosY += rowMaxPageDy + params.pageSpacing.dy;
+        if (layout.readingFrames) {
+            for (int pageNo = row.firstPage; pageNo <= row.lastPage; pageNo++) {
+                layout.GetPage(pageNo)->pos.dy = rowMaxPageDy;
+            }
+        }
     }
 
     int canvasDy = currPosY + params.windowMargin.bottom - params.pageSpacing.dy;
@@ -341,8 +346,10 @@ void DocumentLayout::Relayout(const DocumentLayoutParams& newParams) {
     }
     // Content fit uses per-page zoom and must retain scroll room to hide margins.
     // ShrinkToFit stays within page fit and may use its canvas clamp.
+    bool readingFit = params.zoomVirtual == kZoomFitContentHeight;
+    readingFrames = readingFit && !IsContinuous(params.displayMode);
     bool isFitContent = params.zoomVirtual == kZoomFitContent || params.zoomVirtual == kZoomFitVisible;
-    if (isFitContent || params.zoomVirtual == kZoomShrinkToFit) {
+    if (isFitContent || readingFit || params.zoomVirtual == kZoomShrinkToFit) {
         params.zoomVirtual = kZoomFitPage;
     }
 

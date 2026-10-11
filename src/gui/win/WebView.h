@@ -8,6 +8,12 @@ void WebViewShutdown();
 // TODO: maybe hide those inside a private struct
 typedef interface ICoreWebView2 ICoreWebView2;
 typedef interface ICoreWebView2Controller ICoreWebView2Controller;
+typedef interface ICoreWebView2Environment ICoreWebView2Environment;
+
+enum class WebViewProfile {
+    Shared,
+    Separate
+};
 
 using WebViewMsgCb = Func1<Str>;
 
@@ -140,12 +146,15 @@ struct WebviewWnd : WindowBase {
     void OnShowWindow(WindowBase::ShowWindowEvent* ev);
 
     void UpdateWebviewSize();
+    bool CapturePreview(Str path);
 
     // this is where the webview2 control stores data
     // must be set before we call create
     // TODO: make Webview2CreateCustomArgs
     // with dataDir
     Str dataDir;
+    WebViewProfile profile = WebViewProfile::Shared;
+    ICoreWebView2Environment* environment = nullptr;
     // DWORD m_main_thread = GetCurrentThreadId();
     ICoreWebView2* webview = nullptr;
     ICoreWebView2Controller* controller = nullptr;

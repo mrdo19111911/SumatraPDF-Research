@@ -12,6 +12,7 @@ DisplayMode DisplayModeFromString(Str s, DisplayMode defVal);
 bool TryParseDisplayMode(Str s, DisplayMode* modeOut);
 bool IsPageAspectDisplayMode(Str s);
 bool GetPageAspectView(RectF page, DisplayMode* modeOut, float* zoomOut);
+DisplayMode PortraitPdfMode(Size viewport, Size monitor);
 float ZoomFromString(Str s, float defVal);
 void ZoomToString(Str* dst, float zoom, FileState* fileState);
 bool MaybeGetNextZoomByIncrement(float* currZoomInOut, float towardsLevel);

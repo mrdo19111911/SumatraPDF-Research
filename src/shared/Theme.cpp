@@ -771,6 +771,12 @@ void ToggleLightDarkTheme() {
     SetThemeByIndex(idx);
 }
 
+void ToggleReadingDarkMode() {
+    SetDocumentColorsFollowTheme(DocumentColorsFollowTheme::Smart);
+    SetInvertPageColors(false);
+    ToggleLightDarkTheme();
+}
+
 // name of the theme ToggleLightDarkTheme() would switch to, for the command
 // palette: ": set to true" says nothing useful when a toggle picks a theme
 Str ToggleLightDarkThemeTargetName() {

@@ -24,6 +24,7 @@ constexpr float kZoomShrinkToFit = -4.F;
 constexpr float kZoomFitByOrientation = -5.F;
 constexpr float kZoomFitHeight = -6.F;
 constexpr float kZoomFitVisible = -7.F;
+constexpr float kZoomFitContentHeight = -8.F;
 constexpr float kZoomActualSize = 100.0F;
 constexpr float kZoomMaxDefault = 6400.F;    /* max zoom in %, unless ZoomLevels raises it */
 constexpr float kZoomMaxAllowed = 1000000.F; /* the highest ZoomLevels can raise it to */
@@ -256,6 +257,9 @@ struct FileEBookUI {
 // history of opened files, most recently used first. A closed file
 // stays here until it drops off the list or the history is cleared
 struct FileState {
+    // automatically choose single/facing view and fit content height for
+    // this PDF
+    bool autoContentReading;
     // pages of this document bookmarked in the Favorites menu
     Vec<Favorite*>* favorites;
     // reflowable (ebook) settings for just this document. The block is
@@ -479,6 +483,9 @@ struct ImageUI {
 
 // settings for the Claude Code chat sidebar
 struct ClaudeCode {
+    // path to the Claude Code executable chosen with Browse; empty uses
+    // auto-detection
+    Str executablePath;
     // Claude model alias for --model (e.g. sonnet, opus, haiku); uses opus
     // if not in the model list
     Str model;
@@ -830,6 +837,20 @@ struct Settings {
     // predefined text inserted as a free text annotation from the context
     // menu or the command palette
     Vec<TextSnippet*>* textSnippets;
+    // For documentation, see
+    // https://www.sumatrapdfreader.org/settings/settings3-7.html
+    Str googleDriveClientPath;
+    // optional path to Zalo PC; otherwise detected automatically
+    Str zaloExecutablePath;
+    // local FFmpeg executable for Vietnamese MP3 export; otherwise use
+    // PATH
+    Str researchFfmpegPath;
+    // configurable HTTPS Sci-Hub endpoint
+    Str researchSciHubUrl;
+    // configurable HTTPS Anna Archive website
+    Str researchAnnaUrl;
+    // optional HTTPS CrazyZard-compatible Anna API server
+    Str researchAnnaApiUrl;
     // zoom levels which zooming steps through in addition to Fit Page and
     // Fit Width. The largest value is also the highest zoom that can be
     // set at all, so listing levels above 6400 (up to 1000000) is how you
@@ -882,8 +903,8 @@ struct Settings {
     // floats over the page, sized to its natural width and centered, only
     // shown when the mouse is near it). if empty, derived from ShowToolbar
     Str toolbar;
-    // where the toolbar is placed: top or bottom (applies to both show and
-    // overlay modes)
+    // where the toolbar is placed: auto, top, bottom or right (auto
+    // chooses top/right for the reading area)
     Str toolbarPosition;
     // scrollbar mode: windows (standard Windows scrollbar), smart (overlay
     // scrollbar with auto-hide), overlay (always visible overlay
@@ -1282,7 +1303,7 @@ struct FieldInfo;
 struct StructInfo;
 extern const StructInfo gFavoriteInfo;
 extern const StructInfo gFileEBookUIInfo;
-extern const FieldInfo gFileStateFields[26];
+extern const FieldInfo gFileStateFields[27];
 extern StructInfo gFileStateInfo;
 extern const StructInfo gTabStateInfo;
 extern const StructInfo gSessionDataInfo;

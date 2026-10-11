@@ -30,6 +30,8 @@ struct PageInfo {
 
     /* data that is calculated when needed. actual content size within a page (View target) */
     RectF contentBox;
+    RectF readingContentBox;
+    bool readingContentBoxCalculated = false;
     bool contentBoxCalculated = false;
 
     /* data that changes when zoom and rotation changes */
@@ -171,6 +173,10 @@ struct DisplayModel : DocController {
     PageInfo* GetPageInfo(int pageNo) const;
     RectF PageMediaBox(int pageNo) const;
     RectF PageMediaBoxForLayout(int pageNo) const;
+    RectF ReadingLayoutBox(int pageNo) const;
+    SizeF ToolbarContentSize() const;
+    float ToolbarFitZoom(Size area) const;
+    DisplayMode AutoReadingMode(Size viewport, Size monitor) const;
     void UpdateEstimatedMediaBox();
     bool EnsureMediaBoxesForVisiblePages();
     void EnsureMediaBoxForRender(int pageNo);

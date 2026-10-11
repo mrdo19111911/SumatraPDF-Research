@@ -53,7 +53,11 @@ bool NeedsFindUI(MainWindow* win);
 void ClearSearchResult(MainWindow* win);
 bool OnInverseSearch(MainWindow* win, int x, int y);
 void ShowForwardSearchResult(MainWindow* win, Str fileName, int line, int col, int ret, int page, Vec<Rect>& rects);
-void ShowLinkDestHighlight(MainWindow* win, int pageNo, RectF dest);
+enum class LinkHighlight {
+    Setting,
+    Source
+};
+void ShowLinkDestHighlight(MainWindow* win, int pageNo, RectF dest, LinkHighlight kind = LinkHighlight::Setting);
 void PaintForwardSearchMark(MainWindow* win, Gfx* gfx);
 TempStr LinkDestHighlightResultTemp(int* exitCodeOut);
 void PaintAllFindMatches(MainWindow* win, Gfx* gfx);

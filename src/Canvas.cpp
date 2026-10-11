@@ -38,6 +38,7 @@
 #include "Theme.h"
 #include "AppSettings.h"
 #include "RenderCache.h"
+#include "PdfDarkMode.h"
 #include "ProgressUpdateUI.h"
 #include "TextSelection.h"
 #include "TextSearch.h"
@@ -3901,6 +3902,12 @@ static bool DrawDocument(MainWindow* win, HDC hdc, Rect rcArea) {
         colDocTxt = ThemeWindowTextColor();
         colPlaceholder = colDocBg;
     }
+    if (dm->GetZoomVirtual() == kZoomFitContentHeight && !IsContinuous(dm->GetDisplayMode())) {
+        // The shorter page's frame must continue with the rendered paper color.
+        DarkModeProfile profile;
+        BuildViewDarkModeProfile(engine, &profile);
+        colPlaceholder = profile.mode == PageColorMode::Normal ? gRenderCache->backgroundColor : profile.pageBackground;
+    }
 
     bool shouldPaint = false;
     auto* gcols = gSettings->fixedPageUI.gradientColors;
@@ -4639,7 +4646,9 @@ static LRESULT CanvasOnMouseWheel(MainWindow* win, UINT msg, WPARAM wp, LPARAM l
     }
 
     // fit content: flip page on wheel, regardless of scrollbar state
-    if (vScroll && dm && FitContentWheelFlipsPage(dm) && IsSingle(dm->GetDisplayMode())) {
+    bool contentHeightPageTurn =
+        dm && dm->GetZoomVirtual() == kZoomFitContentHeight && !IsContinuous(dm->GetDisplayMode()) && !isAlt;
+    if (vScroll && dm && (contentHeightPageTurn || (FitContentWheelFlipsPage(dm) && IsSingle(dm->GetDisplayMode())))) {
         win->wheelAccumDelta += delta;
         if (win->wheelAccumDelta >= WHEEL_DELTA) {
             win->ctrl->GoToPrevPage();

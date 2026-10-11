@@ -38,13 +38,10 @@ static const struct {
     float value;
     Str name;
 } zoomModes[] = {
-    {kZoomFitPage, StrL("fit page")},
-    {kZoomFitWidth, StrL("fit width")},
-    {kZoomFitHeight, StrL("fit height")},
-    {kZoomFitContent, StrL("fit content")},
-    {kZoomFitVisible, StrL("fit visible")},
-    {kZoomShrinkToFit, StrL("shrink to fit")},
-    {kZoomFitByOrientation, StrL("fit by orientation")},
+    {kZoomFitPage, StrL("fit page")},          {kZoomFitWidth, StrL("fit width")},
+    {kZoomFitHeight, StrL("fit height")},      {kZoomFitContentHeight, StrL("fit content height")},
+    {kZoomFitContent, StrL("fit content")},    {kZoomFitVisible, StrL("fit visible")},
+    {kZoomShrinkToFit, StrL("shrink to fit")}, {kZoomFitByOrientation, StrL("fit by orientation")},
 };
 
 bool IsValidZoom(float zoom) {
@@ -119,6 +116,10 @@ bool GetPageAspectView(RectF page, DisplayMode* modeOut, float* zoomOut) {
     return true;
 }
 
+DisplayMode PortraitPdfMode(Size viewport, Size monitor) {
+    return viewport.dx > viewport.dy && monitor.dx > monitor.dy ? DisplayMode::Facing : DisplayMode::SinglePage;
+}
+
 DisplayMode DisplayModeFromString(Str s, DisplayMode defVal) {
     DisplayMode mode;
     return TryParseDisplayMode(s, &mode) ? mode : defVal;
@@ -163,8 +164,14 @@ void ZoomToString(Str* dst, float zoom, FileState* fileState) {
 
 #if IS_DEBUG
 bool DisplayMode_UnitTestZoom() {
-    const float values[] = {kZoomFitPage,    kZoomFitWidth,    kZoomFitHeight,       kZoomFitContent,
-                            kZoomFitVisible, kZoomShrinkToFit, kZoomFitByOrientation};
+    if (PortraitPdfMode(Size(1200, 700), Size(1080, 1920)) != DisplayMode::SinglePage ||
+        PortraitPdfMode(Size(700, 1200), Size(1920, 1080)) != DisplayMode::SinglePage ||
+        PortraitPdfMode(Size(1200, 700), Size(1920, 1080)) != DisplayMode::Facing ||
+        PortraitPdfMode(Size(700, 700), Size(1920, 1080)) != DisplayMode::SinglePage) {
+        return false;
+    }
+    const float values[] = {kZoomFitPage,    kZoomFitWidth,    kZoomFitHeight,        kZoomFitContent,
+                            kZoomFitVisible, kZoomShrinkToFit, kZoomFitByOrientation, kZoomFitContentHeight};
     for (float value : values) {
         Str name;
         ZoomToString(&name, value, nullptr);

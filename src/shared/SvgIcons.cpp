@@ -632,3 +632,61 @@ const char* gIconHome =
   <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7" />
   <path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6" />
 </svg>)";
+
+const char* gIconReadingDark =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="1.4" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14a8 8 0 1 1 -10 -10a7 7 0 0 0 10 10z"/></svg>)";
+
+const char* gIconSourceAnswer =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-width="1.4" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3h12v9M4 3v18h8M7 7h6M7 11h3M13 16l4 -4a3 3 0 0 1 4 4l-4 4a3 3 0 0 1 -4 -4M15 18l4 -4"/></svg>)";
+const char* gIconProofExplain =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-width="1.4" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4zM7 8h10M7 12h6M8 16l2 2l4 -4"/></svg>)";
+const char* gIconSymbolIndex =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-width="1.4" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M18 4H6l7 8l-7 8h12M18 4v3M18 20v-3"/></svg>)";
+const char* gIconPaperCompare =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-width="1.4" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h8v16H2zM14 4h8v16h-8zM4 8h4M16 8h4M7 12h10M7 12l2 -2M17 12l-2 2"/></svg>)";
+const char* gIconVersionCompare =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h10v15H3zM11 6h10v15H11M6 8h4M14 12h4M16 10v4M14 17h4"/></svg>)";
+const char* gIconFigureExplain =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-width="1.4" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18M7 17v-5h3v5M13 17V8h3v9M5 8l5 -4l5 2l5 -3"/></svg>)";
+const char* gIconReadingView =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-width="1.4" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5Q6 2 2 5v15q4 -3 10 0q6 -3 10 0V5q-4 -3 -10 0zM12 5v15M5 8h4M5 12h4M15 8h4M15 12h4"/></svg>)";
+
+const char* gIconTextLarger =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="1.4" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M3 19l5 -14l5 14M5 14h6M18 10v8M14 14h8"/></svg>)";
+
+const char* gIconTextSmaller =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="1.4" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M3 19l5 -14l5 14M5 14h6M15 14h7"/></svg>)";
+
+const char* gIconPaperChat =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="1.4" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14v12h-8l-6 5zM8 8h8M8 12h5"/></svg>)";
+
+const char* gIconArxivSearch =
+    "<svg width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8'>"
+    "<circle cx='10' cy='10' r='6'/><path d='m14.5 14.5 6 6 M7 7l6 6 M13 7l-6 6'/></svg>";
+const char* gIconCollectPapers =
+    "<svg width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8'>"
+    "<path d='M3 6h7l2 3h9v12H3z M8 3h11v5 M12 11v7 M9 15l3 3 3-3'/></svg>";
+
+const char* gIconPaperText =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="1.4" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h10l4 4v14H5zM14 3v5h5M8 12h8M8 16h8"/></svg>)";
+
+const char* gIconNarration =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="1.4" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h10v16H3zM6 8h4M6 12h4M6 16h4M17 9v6M20 6v12M23 10v4"/></svg>)";
+
+const char* gIconMp3Export =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="1.4" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3h10l5 5v13H4zM13 3v6h6M8 15h2l3 -3v7l-3 -3H8zM16 13q3 2 0 5"/></svg>)";
+
+const char* gIconConnectedPapers =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="1.4" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="5" r="3"/><circle cx="19" cy="7" r="3"/><circle cx="10" cy="19" r="3"/><path d="M8 5l8 2M6 8l3 8M17 10l-5 6"/></svg>)";
+
+const char* gIconSciHub =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="1.4" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h10l4 4v3M3 3v18h8M12 3v5h5"/><circle cx="16" cy="15" r="4"/><path d="M19 18l3 4"/></svg>)";
+
+const char* gIconDriveUpload =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6l7 12-3 6H5l-3-6zM9 3L2 15h7l6-12M22 15H9l-4 6"/></svg>)";
+
+const char* gIconZaloShare =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M5 4h14v3L9 17h10v3H5v-3L15 7H5z"/></svg>)";
+
+const char* gIconResearchTools =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="1.4" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v7L4 20h16l-6 -10V3M8 15h8"/></svg>)";

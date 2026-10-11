@@ -673,6 +673,31 @@ bool EbookSettingsWnd::Create(MainWindow* mainWin) {
     return true;
 }
 
+float EbookTextSize(MainWindow* win) {
+    WindowTab* tab = win ? win->CurrentTab() : nullptr;
+    if (!tab) return 0;
+    FileState* fs = FileHistoryFindByPath(tab->filePath);
+    float size = fs && fs->eBookUI && fs->eBookUI->fontSize > 0 ? fs->eBookUI->fontSize : gSettings->eBookUI.fontSize;
+    if (size > 6 && size < 256) return size;
+    return str::EndsWithI(tab->filePath, StrL(".epub")) ? 11.f : 8.f;
+}
+
+void ChangeEbookTextSize(MainWindow* win, int step) {
+    WindowTab* tab = win ? win->CurrentTab() : nullptr;
+    EngineBase* engine = tab ? tab->GetEngine() : nullptr;
+    if (!engine || !engine->isReflowable) return;
+    float size = limitValue(EbookTextSize(win) + step, 8.f, 72.f);
+    FileState* fs = FileHistoryFindByPath(tab->filePath);
+    if (!fs) {
+        fs = NewFileState(tab->filePath);
+        FileHistoryAppend(fs);
+    }
+    if (!fs->eBookUI) fs->eBookUI = NewFileEBookUI();
+    fs->eBookUI->fontSize = size;
+    ScheduleSaveSettings();
+    ReloadDocument(win, false);
+}
+
 void ShowEbookSettingsDialog(MainWindow* win) {
     if (!IsMainWindowValidAndNotClosing(win) || !win->CurrentTab() || !win->CurrentTab()->ctrl) {
         return;

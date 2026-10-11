@@ -178,6 +178,10 @@ static SeqStrings zoomValues =
 // if a number, it's in percent e.g. 12.5 means 12.5%
 // 100 means 100% i.e. actual size as e.g. given in PDF file
 static void ParseZoomValue(float* zoom, Str txtOrig) {
+    if (str::EqIS(txtOrig, StrL("fit content height"))) {
+        *zoom = kZoomFitContentHeight;
+        return;
+    }
     TempStr txtDup = str::DupTemp(txtOrig);
     str::ToLowerInPlace(txtDup);
     int zoomVal = SeqStrIndex(zoomValues, txtDup);

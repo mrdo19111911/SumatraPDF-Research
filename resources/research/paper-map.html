@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'none'"
+    />
+    <title>Paper KG</title>
+    <style>
+      :root {
+        --bg: #fff;
+        --fg: #202020;
+        --muted: #666;
+        --user: #1261a0;
+        --border: #ccc;
+        --code-bg: #f4f6f8;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          14px/1.5 "Segoe UI",
+          sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+      }
+      header {
+        position: sticky;
+        top: 0;
+        padding: 12px;
+        background: var(--bg);
+        border-bottom: 1px solid var(--border);
+        z-index: 2;
+      }
+      .bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      h1 {
+        font-size: 16px;
+        margin: 0;
+        flex: 1;
+      }
+      button,
+      select,
+      input {
+        font: inherit;
+        color: inherit;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 5px 8px;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:focus-visible,
+      select:focus-visible,
+      input:focus-visible {
+        outline: 2px solid var(--user);
+      }
+      #coverage,
+      #status,
+      .help {
+        color: var(--muted);
+        margin: 7px 0 0;
+        font-size: 12px;
+      }
+      #query {
+        min-width: 100px;
+        flex: 1;
+      }
+      #map {
+        position: relative;
+        margin: 14px;
+        min-height: 150px;
+      }
+      #connections {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        overflow: visible;
+      }
+      #connections > path {
+        stroke: var(--user);
+        stroke-width: 1.4;
+        stroke-dasharray: 4 4;
+        fill: none;
+        opacity: 0.55;
+      }
+      #cards {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 38px 20px;
+        position: relative;
+      }
+      .node {
+        display: block;
+        text-align: left;
+        padding: 10px;
+        min-height: 95px;
+        border-left: 4px solid var(--user);
+        overflow-wrap: anywhere;
+      }
+      .node small {
+        display: block;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+      .node.selected {
+        background: var(--code-bg);
+        outline: 2px solid var(--user);
+      }
+      .node.unverified {
+        border-left-color: var(--muted);
+      }
+      #details {
+        margin: 14px;
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+      }
+      #details button {
+        display: block;
+        margin: 7px 0;
+        text-align: left;
+        width: 100%;
+      }
+      #tooltip {
+        position: fixed;
+        z-index: 10;
+        width: min(440px, calc(100vw - 24px));
+        max-height: 70vh;
+        overflow: auto;
+        padding: 12px;
+        background: var(--code-bg);
+        color: var(--fg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        box-shadow: 0 4px 16px #0003;
+        pointer-events: none;
+        white-space: pre-wrap;
+      }
+      #tooltip strong {
+        display: block;
+        color: var(--user);
+        margin-bottom: 6px;
+      }
+      #tooltip mark {
+        background: var(--user);
+        color: var(--bg);
+        padding: 0 2px;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      @media (max-width: 360px) {
+        #cards {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+    <script type="module" src="/paper-map.js"></script>
+  </head>
+  <body>
+    <header>
+      <div class="bar">
+        <h1>KG · Paper</h1>
+        <button id="rebuild">Tạo lại</button>
+        <button id="close" aria-label="Đóng bản đồ">×</button>
+      </div>
+      <p id="coverage"></p>
+      <div class="bar">
+        <select id="layer" aria-label="Lớp bản đồ">
+          <option value="all">Tất cả</option>
+          <option value="ideas">Ý tưởng</option>
+          <option value="proof">Lập luận</option>
+          <option value="references">Tài liệu</option>
+        </select>
+        <input id="query" placeholder="Tìm nút…" aria-label="Tìm nút" />
+      </div>
+      <p class="help">Hover để xem đoạn PDF · Bấm để đến nguồn. Cạnh nét đứt: AI đề xuất, chưa kiểm chứng lập luận.</p>
+      <p id="status" role="status"></p>
+    </header>
+    <main>
+      <div id="map">
+        <svg id="connections" aria-hidden="true"></svg>
+        <div id="cards"></div>
+      </div>
+      <section id="details" hidden></section>
+    </main>
+    <aside id="tooltip" role="tooltip" hidden></aside>
+  </body>
+</html>

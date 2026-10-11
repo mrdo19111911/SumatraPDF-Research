@@ -347,6 +347,32 @@ bool CmdWorksWithoutDocument(int cmdId) {
 }
 
 CommandVisibility GetCommandVisibility(int cmdId, const AppCommandCtx& ctx, CommandSurface surface) {
+// Sharing is implemented by the original Win32 application's document service.
+#ifndef SUMATRA_NG
+    if (cmdId == CmdToggleReadingDarkMode) return CommandVisibility::Show;
+    if (cmdId == CmdArxivSearch) {
+        return HasPermission(Perm::InternetAccess | Perm::DiskAccess)
+                   ? CommandVisibility::Show
+                   : MapForSurface(CommandVisibility::Disable, surface);
+    }
+    if (cmdId == CmdIncreaseTextSize || cmdId == CmdDecreaseTextSize) {
+        return ctx.isDocLoaded && ctx.isReflowable ? CommandVisibility::Show : CommandVisibility::Disable;
+    }
+    if (cmdId == CmdResearchTools || cmdId == CmdConnectedPapers || cmdId == CmdSciHub || cmdId == CmdCollectPapers ||
+        cmdId == CmdResearchNarration || cmdId == CmdResearchExportText || cmdId == CmdResearchExportMp3 ||
+        cmdId == CmdPaperMap || (cmdId >= CmdResearchAsk && cmdId <= CmdResearchReading)) {
+        bool available = ctx.isPdf && ctx.isDocLoaded && HasPermission(Perm::InternetAccess | Perm::DiskAccess);
+        if (cmdId == CmdPaperMap || (cmdId >= CmdResearchAsk && cmdId <= CmdResearchReading))
+            available = available && HasPermission(Perm::CopySelection);
+        return available ? CommandVisibility::Show : MapForSurface(CommandVisibility::Disable, surface);
+    }
+    if (cmdId == CmdGoogleDrive || cmdId == CmdSendToZalo) {
+        bool available =
+            ctx.isDocLoaded && len(ctx.filePath) > 0 && HasPermission(Perm::InternetAccess | Perm::DiskAccess);
+        if (cmdId == CmdSendToZalo) available = available && HasPermission(Perm::CopySelection);
+        return available ? CommandVisibility::Show : MapForSurface(CommandVisibility::Disable, surface);
+    }
+#endif
     if (cmdId <= CmdFirst) {
         return CommandVisibility::Hide;
     }
@@ -551,6 +577,9 @@ CommandVisibility GetCommandVisibility(int cmdId, const AppCommandCtx& ctx, Comm
         return CommandVisibility::Hide;
     }
 
+    if (!ctx.isPdf && cmdId == CmdAutoContentReading) {
+        return CommandVisibility::Hide;
+    }
     if (!ctx.isPdf) {
         if (cmdId == CmdPdfShowInfo || cmdId == CmdPdfBake || cmdId == CmdPdfCompress || cmdId == CmdPdfDecompress ||
             cmdId == CmdPdfEncrypt || cmdId == CmdPdfDecrypt || cmdId == CmdPdfDeletePages ||

@@ -83,6 +83,17 @@ export async function packEmbedded(
   if (!existsSync(translations)) writeChanged(translations, "");
   inputs.set("translations.txt", translations);
   for (const name of ["marked.min.js", "mermaid.min.js"]) inputs.set(name, join(inputRoot, "ext", name));
+  const markdownAssets = join(inputRoot, "resources/markdown");
+  for (const name of ["paper-map.html", "paper-map.js"]) inputs.set(name, join(inputRoot, "resources/research", name));
+  for (const src of filesUnder(markdownAssets)) inputs.set(join("markdown", relative(markdownAssets, src)), src);
+  for (const name of [
+    "Install-Vietnamese-Voice.ps1",
+    "Speak-Vietnamese.ps1",
+    "THIRD-PARTY.txt",
+    "SciHub-MIT-LICENSE.txt",
+    "Anna-API-MIT-LICENSE.txt",
+  ])
+    inputs.set(join("research", name), join(inputRoot, "research", name));
   if (opts.fonts) {
     for (const [forge, patterns] of fontPatterns) {
       const fontDir = join(inputRoot, "ext/mupdf/resources/fonts", forge);

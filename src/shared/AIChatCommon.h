@@ -49,6 +49,8 @@ struct AIChatNotInstalledDialogArgs {
     Str windowTitle;
     Str mainInstruction;
     Str docUri;
+    bool canBrowse = false;
+    HWND hwndParent = nullptr;
 };
 
 struct AIChatProcessLaunchResult {
@@ -75,6 +77,7 @@ struct AIChatStreamCtx {
     MainWindow* win = nullptr;
     int providerId = 0;
     Str sessionId; // owned; the session the output belongs to
+    u64 requestId = 0;
 };
 
 void AIChatPostUpdate(AIChatStreamCtx* ctx, AIChatUpdateType type, Str text);
@@ -188,18 +191,20 @@ TempStr AIChatDebugGetTemp();
 // message, using the same provider code the panel does; returns "OK\n<text>" or
 // "FAIL: <reason>\n--- debug log ---\n<log>". For -dbg-control tests.
 TempStr AIChatTestResultTemp(int backend, Str filePath, Str message, int* exitCode);
+bool AIChatNarrate(Str source, Str prompt, Str& text, Str& error, HANDLE cancel);
 
 // Inject a canned (user, assistant) turn into the chat webview (opening the grok
 // panel if needed) to debug webview rendering without a live provider call.
 TempStr AIChatTestReplayResultTemp(Str userMsg, Str response, int* exitCode);
 
-void AIChatShowNotInstalledDialog(const AIChatNotInstalledDialogArgs& args);
+bool AIChatShowNotInstalledDialog(const AIChatNotInstalledDialogArgs& args);
 void AIChatShowNotInstalledDialog(MainWindow* win, const AIChatNotInstalledDialogArgs& args);
 bool IsAIChatNotInstalledDialogVisible();
 void CloseAIChatNotInstalledDialog();
 gpui::El* AIChatNotInstalledDialogBuild(MainWindow* win, gpui::Ctx* cx);
 
 TempStr AIChatFindExecutableTemp(const StrVec& fullPathCandidates, Str searchExeName, Str searchNameNoExt = {});
+bool AIChatSetClaudeExecutable(Str path);
 
 void AIChatAppendModelUnique(StrVec& models, Str model);
 inline void AIChatAppendModels(StrVec& models, Str values) {

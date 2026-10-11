@@ -14,6 +14,7 @@
 // #include "Theme.h"
 
 #ifdef _MSC_VER
+#include <wrl.h>
 #include "WebView2EnvironmentOptions.h"
 #endif
 #include "gui/win/WebView.h"
@@ -734,11 +735,13 @@ class webview2_download_starting_handler : public ICoreWebView2DownloadStartingE
     ULONG m_refCount = 1;
 };
 
+static void OnSeparateEnvReady(HWND hwnd, HRESULT result, ICoreWebView2Environment* env);
+
 class webview2_env_handler : public ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler {
   public:
     using env_ready_cb_t = void (*)(HRESULT, ICoreWebView2Environment*);
 
-    explicit webview2_env_handler(env_ready_cb_t cb) : m_cb(cb) {}
+    explicit webview2_env_handler(env_ready_cb_t cb, HWND hwnd = nullptr) : m_cb(cb), m_hwnd(hwnd) {}
 
     ULONG STDMETHODCALLTYPE AddRef() { return ++m_refCount; }
 
@@ -764,7 +767,9 @@ class webview2_env_handler : public ICoreWebView2CreateCoreWebView2EnvironmentCo
     }
 
     HRESULT STDMETHODCALLTYPE Invoke(HRESULT res, ICoreWebView2Environment* env) {
-        if (m_cb) {
+        if (m_hwnd) {
+            OnSeparateEnvReady(m_hwnd, res, env);
+        } else if (m_cb) {
             m_cb(res, env);
         }
         return S_OK;
@@ -772,6 +777,7 @@ class webview2_env_handler : public ICoreWebView2CreateCoreWebView2EnvironmentCo
 
   private:
     env_ready_cb_t m_cb;
+    HWND m_hwnd;
     ULONG m_refCount = 1;
 };
 
@@ -808,9 +814,10 @@ static TempWStr UriPathFromPrefix(WStr uri, WStr prefix, bool keepQueryAndFragme
     return str::DupTemp(path);
 }
 
-static bool CreateWebResourceResponseFromData(ICoreWebView2WebResourceRequestedEventArgs* args, Str data,
+static bool CreateWebResourceResponseFromData(ICoreWebView2Environment* env,
+                                              ICoreWebView2WebResourceRequestedEventArgs* args, Str data,
                                               Str contentType, int statusCode) {
-    if (!args || !gSharedEnvironment) {
+    if (!args || !env) {
         return false;
     }
 
@@ -835,8 +842,8 @@ static bool CreateWebResourceResponseFromData(ICoreWebView2WebResourceRequestedE
 
     TempWStr headers = MimeHeaderFromContentType(contentType);
     ICoreWebView2WebResourceResponse* response = nullptr;
-    HRESULT hr = gSharedEnvironment->CreateWebResourceResponse(
-        stream, statusCode, statusCode == 200 ? L"OK" : L"Not Found", headers.s, &response);
+    HRESULT hr = env->CreateWebResourceResponse(stream, statusCode, statusCode == 200 ? L"OK" : L"Not Found", headers.s,
+                                                &response);
     if (stream) {
         stream->Release();
     }
@@ -900,11 +907,12 @@ class webview2_resource_handler : public ICoreWebView2WebResourceRequestedEventH
         TempStr path = ToUtf8Temp(pathW);
         WebViewResourceResult res;
         if (!m_wnd->resourceProvider.getResource(m_wnd->resourceProvider.ctx, path, &res)) {
-            CreateWebResourceResponseFromData(args, {}, StrL("text/plain"), 404);
+            CreateWebResourceResponseFromData(m_wnd->environment, args, {}, StrL("text/plain"), 404);
             return S_OK;
         }
 
-        CreateWebResourceResponseFromData(args, Str((char*)res.data, (int)res.dataLen), res.contentType, 200);
+        CreateWebResourceResponseFromData(m_wnd->environment, args, Str((char*)res.data, (int)res.dataLen),
+                                          res.contentType, 200);
         if (res.ownsData) {
             free((void*)res.data);
         }
@@ -1103,7 +1111,7 @@ void WebviewWnd::OnProcessFailed(WebViewProcessFailure kind) {
             // everything hanging off this environment is dead, including the
             // shared one other webviews use; drop it so the next Embed() builds
             // a fresh environment instead of handing out a dead one
-            ResetSharedEnvironment();
+            if (profile == WebViewProfile::Shared) ResetSharedEnvironment();
             FailInit();
             break;
         case WebViewProcessFailure::Other:
@@ -1387,6 +1395,22 @@ void WebviewWnd::UpdateWebviewSize() {
     hasLastBounds = true;
     RECT r = ToRECT(bounds);
     controller->put_Bounds(r);
+}
+
+// Capture the browser surface for hidden UI checks; PrintWindow can omit it.
+bool WebviewWnd::CapturePreview(Str path) {
+    if (!webview || str::IsEmptyOrWhiteSpace(path)) return false;
+    Microsoft::WRL::ComPtr<IStream> stream;
+    HRESULT hr = SHCreateStreamOnFileEx(CWStrTemp(path), STGM_CREATE | STGM_WRITE | STGM_SHARE_EXCLUSIVE,
+                                        FILE_ATTRIBUTE_NORMAL, TRUE, nullptr, stream.GetAddressOf());
+    if (FAILED(hr)) return false;
+    auto callback =
+        Microsoft::WRL::Callback<ICoreWebView2CapturePreviewCompletedHandler>([stream](HRESULT result) -> HRESULT {
+            if (SUCCEEDED(result)) stream->Commit(STGC_DEFAULT);
+            return S_OK;
+        });
+    hr = webview->CapturePreview(COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG, stream.Get(), callback.Get());
+    return SUCCEEDED(hr);
 }
 
 void WebviewWnd::Eval(Str js) {
@@ -1736,7 +1760,7 @@ void WebviewWnd::Focus() {
 
 // open the WebView2 (Chromium) find-on-page bar, like a browser's Ctrl+F
 void WebviewWnd::ShowFindUI() {
-    if (!webview || !gSharedEnvironment) {
+    if (!webview || !environment) {
         return;
     }
     Focus();
@@ -1749,7 +1773,7 @@ void WebviewWnd::ShowFindUI() {
     ICoreWebView2Environment15* env15 = nullptr;
     ICoreWebView2Find* find = nullptr;
     ICoreWebView2FindOptions* opts = nullptr;
-    if (SUCCEEDED(gSharedEnvironment->QueryInterface(IID_PPV_ARGS(&env15))) && env15) {
+    if (SUCCEEDED(environment->QueryInterface(IID_PPV_ARGS(&env15))) && env15) {
         env15->CreateFindOptions(&opts);
         env15->Release();
     }
@@ -1859,21 +1883,37 @@ static void FailPendingWebviews() {
     }
 }
 
-static void CreateControllerWithSharedEnvironment(WebviewWnd* self, WebViewMsgCb& cb) {
-    if (!self || !gSharedEnvironment) {
+static void CreateWebController(WebviewWnd* self, ICoreWebView2Environment* env, WebViewMsgCb& cb) {
+    if (!self || !env) {
         if (self) {
             self->FailInit();
         }
         return;
     }
     HWND hwnd = self->hwnd;
+    env->AddRef();
+    self->environment = env;
     auto fn = MkFunc1<void, ICoreWebView2Controller*>(ComHandlerCbHwnd, (void*)hwnd);
     auto* handler = new webview2_com_handler(hwnd, cb, fn, self->allowClipboardRead);
-    HRESULT hr = gSharedEnvironment->CreateCoreWebView2Controller(self->hwnd, handler);
+    HRESULT hr = env->CreateCoreWebView2Controller(self->hwnd, handler);
     handler->Release();
     if (FAILED(hr)) {
         self->FailInit();
     }
+}
+
+static void OnSeparateEnvReady(HWND hwnd, HRESULT result, ICoreWebView2Environment* env) {
+    if (gWebViewShuttingDown) return;
+    auto* base = WindowBaseFromHwnd(hwnd);
+    if (!base || base->kind != kindWebView) return;
+    auto* self = (WebviewWnd*)base;
+    if (self->profile != WebViewProfile::Separate) return;
+    if (FAILED(result) || !env) {
+        self->FailInit();
+        return;
+    }
+    auto fn = MkFunc1<void, Str>(OnBrowserMessageCbHwnd, (void*)hwnd);
+    CreateWebController(self, env, fn);
 }
 
 static bool StartSharedEnvironmentCreation();
@@ -1978,7 +2018,7 @@ static void OnSharedEnvironmentReady(HRESULT res, ICoreWebView2Environment* env)
         }
         HWND hwnd = wv->hwnd;
         auto fn = MkFunc1<void, Str>(OnBrowserMessageCbHwnd, (void*)hwnd);
-        CreateControllerWithSharedEnvironment(wv, fn);
+        CreateWebController(wv, gSharedEnvironment, fn);
     }
 }
 
@@ -2046,8 +2086,18 @@ bool WebviewWnd::Embed(WebViewMsgCb& cb) {
     wstr::Free(userDataFolder);
     userDataFolder = wstr::Dup(ToWStrTemp(dataDir));
 
+    // Persistent browser profiles must not inherit the chat's disposable environment.
+    if (profile == WebViewProfile::Separate) {
+        auto options = CreateOfflineEnvironmentOptions();
+        auto* handler = new webview2_env_handler(nullptr, hwnd);
+        HRESULT result = CreateCoreWebView2EnvironmentWithOptions(nullptr, userDataFolder.s, options.Get(), handler);
+        handler->Release();
+        if (FAILED(result)) FailInit();
+        return !initFailed;
+    }
+
     if (gSharedEnvState == SharedWebViewEnvState::Ready && gSharedEnvironment) {
-        CreateControllerWithSharedEnvironment(this, cb);
+        CreateWebController(this, gSharedEnvironment, cb);
         return !initFailed;
     }
 
@@ -2220,6 +2270,7 @@ WebviewWnd::~WebviewWnd() {
         controller->Release();
         controller = nullptr;
     }
+    if (environment) environment->Release();
     str::Free(dataDir);
     wstr::Free(userDataFolder);
     wstr::Free(resourceUriPrefix);
@@ -2296,4 +2347,7 @@ void WebviewWnd::OnSize(WindowBase::SizeEvent*) {}
 void WebviewWnd::OnActivate(WindowBase::ActivateEvent*) {}
 void WebviewWnd::OnShowWindow(WindowBase::ShowWindowEvent*) {}
 void WebviewWnd::UpdateWebviewSize() {}
+bool WebviewWnd::CapturePreview(Str) {
+    return false;
+}
 #endif // !_MSC_VER
