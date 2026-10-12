@@ -12,6 +12,9 @@ enum class ResearchAction {
 void OnResearchTools(MainWindow* win, ResearchAction action = ResearchAction::Menu);
 void OpenResearchBrowser(MainWindow* win, int service);
 void OpenSciHubBrowser(MainWindow* win, Str endpoint, Str query);
+HWND ResearchBrowserHwnd(MainWindow* win);
+void RelayoutResearchBrowser(MainWindow* win);
+void HideResearchBrowser(MainWindow* win);
 enum class PaperAction {
     Ask,
     Selection,

@@ -1078,7 +1078,7 @@ void RelayoutAIChatPanel(MainWindow* win) {
     if (!win || !win->hwndAiChatBox || !win->uiState.aiChatVisible) {
         return;
     }
-    if (PaperMapHwnd(win)) return;
+    if (PaperMapHwnd(win) || ResearchBrowserHwnd(win)) return;
     win->aiChatSplitter->onMove = MkFunc1Void(OnAIChatSplitterMove);
     LayoutAIChatBox(win);
     KillTimer(win->hwndAiChatBox, kTimerWebViewSize);
@@ -1483,6 +1483,7 @@ void OnAIChatToggle(MainWindow* win, int providerId) {
         return;
     }
     if (PaperMapHwnd(win)) HidePaperMap(win);
+    HideResearchBrowser(win);
     if (AIChatGetTabPanelOpen(tab) == p->backend) {
         logf("OnAIChatToggle: closing panel for backend %d\n", (int)p->backend);
         AIChatSetTabPanelOpen(tab, AIChatBackend::None);

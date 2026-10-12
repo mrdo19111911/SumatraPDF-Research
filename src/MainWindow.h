@@ -560,6 +560,7 @@ struct MainWindow { // NOLINT(clang-analyzer-optin.performance.Padding)
             bool showMenuBarRebar = false;
             bool aiChatVisible = false;
             HWND paperMap = nullptr;
+            HWND researchBrowser = nullptr;
             int aiChatDx = 0;
             bool sidebarOnRight = false;
         };

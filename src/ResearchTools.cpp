@@ -11,6 +11,7 @@
 #include "base/Pixmap.h"
 #include "base/JsonParser.h"
 #include "gui/UIModels.h"
+#include "gui/Dpi.h"
 #include "gui/Layout.h"
 #include "gui/win/WinGui.h"
 #include "gui/PlatformFont.h"
@@ -92,12 +93,14 @@ static ResearchJob* gResearchJob = nullptr;
 static u64 gResearchGeneration = 0;
 static Kind kNotifPaperAssistant = "paper-assistant";
 static void ForgetPaperMap(WindowTab* tab);
+static void ForgetResearchBrowser(WindowTab* tab);
 constexpr int kPaperTextLimit = 16 * 1024 * 1024;
 constexpr int kPaperImageWidth = 1280;
 
 void ResearchForgetTab(WindowTab* tab) {
     if (!tab) return;
     ForgetPaperMap(tab);
+    ForgetResearchBrowser(tab);
     tab->researchGeneration = 0;
     if (gResearchJob && gResearchJob->tab == tab) SetEvent(gResearchJob->cancel);
 }
@@ -848,6 +851,7 @@ void HidePaperMap(MainWindow* win) {
 
 void TogglePaperMap(MainWindow* win) {
     if (!win || !win->AsFixed()) return;
+    HideResearchBrowser(win);
     for (auto* report : gPaperReports) {
         if (!report->graph || report->tab != win->CurrentTab()) continue;
         if (report->engine != report->tab->GetEngine()) {
@@ -1298,6 +1302,7 @@ static void ShowPaperReport(ResearchJob* job) {
     if (report->graph) {
         MainWindow* win = FindMainWindowByHwnd(job->owner);
         if (win && win->CurrentTab() == report->tab) {
+            HideResearchBrowser(win);
             if (win->aiChatDx <= 0) win->aiChatDx = HwndClientRect(win->hwndFrame).dx / 2;
             report->tab->portraitViewAuto = true;
             report->tab->portraitViewOnOpenPending = true;
@@ -1313,6 +1318,10 @@ struct ResearchBrowser {
     HWND search = nullptr, external = nullptr, save = nullptr;
     WebviewWnd* web = nullptr;
     MainWindow* owner = nullptr;
+    WindowTab* tab = nullptr;
+    bool docked = false;
+    bool collapsed = false;
+    RECT floatingRect{};
     int service = 0;
     Str url, probe;
     ~ResearchBrowser() {
@@ -1323,8 +1332,83 @@ struct ResearchBrowser {
 };
 
 static ResearchBrowser* gTestResearchBrowser = nullptr;
+static Vec<ResearchBrowser*> gResearchBrowsers;
 constexpr UINT_PTR kResearchSizeTimer = 1;
 constexpr int kResearchCloseBtn = 104;
+constexpr int kResearchDockBtn = 105;
+constexpr int kResearchCollapseBtn = 106;
+constexpr WCHAR kResearchBrowserClass[] = L"SUMATRA_RESEARCH_BROWSER";
+
+HWND ResearchBrowserHwnd(MainWindow* win) {
+    if (!win) return nullptr;
+    for (auto* browser : gResearchBrowsers)
+        if (browser->owner == win && browser->tab == win->CurrentTab() && browser->docked && !browser->collapsed)
+            return browser->hwnd;
+    return nullptr;
+}
+
+void HideResearchBrowser(MainWindow* win) {
+    for (auto* browser : gResearchBrowsers) {
+        if (browser->owner != win || !browser->docked) continue;
+        browser->collapsed = true;
+        ShowWindow(browser->hwnd, SW_HIDE);
+        browser->web->SetControllerVisible(false);
+    }
+    ScheduleUiUpdate(win, kUiRelayout | kUiToolbarDirty);
+}
+
+void RelayoutResearchBrowser(MainWindow* win) {
+    HWND active = ResearchBrowserHwnd(win);
+    for (auto* browser : gResearchBrowsers) {
+        if (browser->owner != win || !browser->docked) continue;
+        bool visible = browser->hwnd == active;
+        HwndSetVisible(browser->hwnd, visible);
+        HwndSetVisible(browser->web->hwnd, visible);
+        browser->web->SetControllerVisible(visible);
+    }
+    if (active) win->aiChatSplitter->onMove = MkFunc1Void(PaperMapSplit);
+}
+
+static void ForgetResearchBrowser(WindowTab* tab) {
+    for (int i = len(gResearchBrowsers) - 1; i >= 0; i--) {
+        auto* browser = gResearchBrowsers[i];
+        if (browser->tab == tab) DestroyWindow(browser->hwnd);
+    }
+}
+
+enum class BrowserMode {
+    Floating,
+    Docked
+};
+
+static void SetBrowserMode(ResearchBrowser* browser, BrowserMode mode) {
+    bool dock = mode == BrowserMode::Docked;
+    if (dock == browser->docked) return;
+    ShowWindow(browser->hwnd, SW_HIDE);
+    if (dock) {
+        GetWindowRect(browser->hwnd, &browser->floatingRect);
+        HideResearchBrowser(browser->owner);
+        HidePaperMap(browser->owner);
+        SetWindowLongPtrW(browser->hwnd, GWL_STYLE, WS_CHILD | WS_CLIPCHILDREN);
+        SetWindowLongPtrW(browser->hwnd, GWL_EXSTYLE, 0);
+        SetParent(browser->hwnd, browser->ownerHwnd);
+        if (browser->owner->aiChatDx <= 0) browser->owner->aiChatDx = HwndClientRect(browser->ownerHwnd).dx / 2;
+    } else {
+        SetParent(browser->hwnd, nullptr);
+        SetWindowLongPtrW(browser->hwnd, GWLP_HWNDPARENT, (LONG_PTR)browser->ownerHwnd);
+        SetWindowLongPtrW(browser->hwnd, GWL_STYLE, WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN);
+        SetWindowLongPtrW(browser->hwnd, GWL_EXSTYLE, WS_EX_APPWINDOW);
+    }
+    browser->docked = dock;
+    browser->collapsed = false;
+    SetWindowTextW(GetDlgItem(browser->hwnd, kResearchDockBtn), dock ? L"Float" : L"Dock");
+    SetWindowTextW(GetDlgItem(browser->hwnd, kResearchCollapseBtn), dock ? L"Hide" : L"Minimize");
+    RECT r = browser->floatingRect;
+    SetWindowPos(browser->hwnd, nullptr, r.left, r.top, r.right - r.left, r.bottom - r.top,
+                 SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    if (!dock) ShowWindow(browser->hwnd, SW_SHOW);
+    ScheduleUiUpdate(browser->owner, kUiRelayout | kUiToolbarDirty);
+}
 
 static TempStr ResearchArxivId(Str text) {
     Str id = PaperArxivIdTemp(text);
@@ -1467,6 +1551,7 @@ static void ResearchSearch(ResearchBrowser* browser, Str url) {
 
 static LRESULT CALLBACK ResearchBrowserProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR data) {
     auto* browser = (ResearchBrowser*)data;
+    DpiScope dpi(hwnd);
     if (msg == WM_CLOSE || (msg == WM_COMMAND && LOWORD(wp) == kResearchCloseBtn)) {
         DestroyWindow(hwnd);
         return 0;
@@ -1479,21 +1564,45 @@ static LRESULT CALLBACK ResearchBrowserProc(HWND hwnd, UINT msg, WPARAM wp, LPAR
     if (msg == WM_SIZE) {
         RECT r{};
         GetClientRect(hwnd, &r);
-        int top = browser->service == 1 ? 64 : 34;
-        int buttons = browser->service ? 332 : 252;
-        MoveWindow(browser->input, 8, 4, std::max(40L, r.right - buttons - 16), 24, TRUE);
-        MoveWindow(browser->search, r.right - buttons, 4, 72, 24, TRUE);
-        MoveWindow(browser->external, r.right - buttons + 80, 4, 72, 24, TRUE);
-        if (browser->save) MoveWindow(browser->save, r.right - 172, 4, 84, 24, TRUE);
-        MoveWindow(GetDlgItem(hwnd, kResearchCloseBtn), r.right - 84, 4, 76, 24, TRUE);
-        if (browser->endpoint) MoveWindow(browser->endpoint, 8, 34, std::max(100L, r.right - 16), 24, TRUE);
+        int margin = DpiScale(8), gap = DpiScale(4), height = DpiScale(24), buttonWidth = DpiScale(76);
+        HWND buttons[] = {browser->search,
+                          browser->external,
+                          browser->save,
+                          GetDlgItem(hwnd, kResearchDockBtn),
+                          GetDlgItem(hwnd, kResearchCollapseBtn),
+                          GetDlgItem(hwnd, kResearchCloseBtn)};
+        int count = browser->save ? 6 : 5;
+        int width = std::max(1L, r.right - 2 * margin);
+        int columns = std::max(1, std::min(count, (width + gap) / (buttonWidth + gap)));
+        int cellWidth = std::min(buttonWidth, std::max(1, (width - (columns - 1) * gap) / columns));
+        int index = 0;
+        for (HWND button : buttons) {
+            if (!button) continue;
+            MoveWindow(button, margin + index % columns * (cellWidth + gap), gap + index / columns * (height + gap),
+                       cellWidth, height, TRUE);
+            index++;
+        }
+        int top = gap + (count + columns - 1) / columns * (height + gap);
+        MoveWindow(browser->input, margin, top, width, height, TRUE);
+        top += height + gap;
+        if (browser->endpoint) {
+            MoveWindow(browser->endpoint, margin, top, width, height, TRUE);
+            top += height + gap;
+        }
         if (browser->web && browser->web->hwnd) {
             MoveWindow(browser->web->hwnd, 0, top, r.right, std::max(0L, r.bottom - top), TRUE);
             SetTimer(hwnd, kResearchSizeTimer, 50, nullptr);
         }
     } else if (msg == WM_COMMAND) {
         int command = LOWORD(wp);
-        if (command == 101) {
+        if (command == kResearchDockBtn) {
+            SetBrowserMode(browser, browser->docked ? BrowserMode::Floating : BrowserMode::Docked);
+        } else if (command == kResearchCollapseBtn) {
+            if (browser->docked)
+                HideResearchBrowser(browser->owner);
+            else
+                ShowWindow(hwnd, SW_MINIMIZE);
+        } else if (command == 101) {
             TempStr url = ResearchBrowserUrl(browser);
             if (len(url)) {
                 if (browser->service) {
@@ -1523,26 +1632,57 @@ static LRESULT CALLBACK ResearchBrowserProc(HWND hwnd, UINT msg, WPARAM wp, LPAR
     } else if (msg == WM_NCDESTROY) {
         KillTimer(hwnd, kResearchSizeTimer);
         if (gTestResearchBrowser == browser) gTestResearchBrowser = nullptr;
+        VecRemove(gResearchBrowsers, browser);
         RemoveWindowSubclass(hwnd, ResearchBrowserProc, 1);
         LRESULT result = DefSubclassProc(hwnd, msg, wp, lp);
+        HWND owner = browser->ownerHwnd;
         delete browser;
+        if (auto* win = FindMainWindowByHwnd(owner)) ScheduleUiUpdate(win, kUiRelayout | kUiToolbarDirty);
         return result;
     }
     return DefSubclassProc(hwnd, msg, wp, lp);
 }
 
 // Sci-Hub (service 1) starts with `query` at `endpoint` when given, else the paper's DOI at the saved endpoint
-static void OpenResearchBrowserAt(MainWindow* win, int service, Str initialUrl, Str query = {}, Str endpoint = {}) {
+static void OpenResearchBrowserAt(MainWindow* win, int service, Str initialUrl, Str query = {}, Str endpoint = {},
+                                  BrowserMode mode = BrowserMode::Docked) {
     if (!HasWebView()) {
         LaunchBrowser(service ? gSettings->researchSciHubUrl
                               : ConnectedPaperUrl(ConnectedPaperQuery(win->CurrentTab())));
         return;
     }
+    for (auto* existing : gResearchBrowsers) {
+        if (existing->owner != win || existing->tab != win->CurrentTab() || existing->service != service) continue;
+        if (len(query)) HwndSetText(existing->input, query);
+        if (len(endpoint) && existing->endpoint) HwndSetText(existing->endpoint, endpoint);
+        if (len(initialUrl))
+            ResearchNavigate(existing, initialUrl);
+        else if (len(query) || len(endpoint))
+            ResearchSearch(existing, ResearchBrowserUrl(existing));
+        if (existing->docked) {
+            HideResearchBrowser(win);
+            HidePaperMap(win);
+            existing->collapsed = false;
+            ScheduleUiUpdate(win, kUiRelayout | kUiToolbarDirty);
+        } else {
+            ShowWindow(existing->hwnd, SW_RESTORE);
+            SetForegroundWindow(existing->hwnd);
+        }
+        return;
+    }
+    WNDCLASSW cls{};
+    cls.lpfnWndProc = DefWindowProcW;
+    cls.hInstance = GetModuleHandle(nullptr);
+    cls.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    cls.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    cls.lpszClassName = kResearchBrowserClass;
+    RegisterClassW(&cls);
     auto* browser = new ResearchBrowser();
     browser->owner = win;
     browser->ownerHwnd = win->hwndFrame;
     browser->service = service;
-    browser->hwnd = CreateWindowExW(WS_EX_APPWINDOW, WC_STATIC,
+    browser->tab = win->CurrentTab();
+    browser->hwnd = CreateWindowExW(WS_EX_APPWINDOW, kResearchBrowserClass,
                                     service ? L"Sci-Hub — research browser" : L"Connected Papers — research browser",
                                     WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 1100, 800,
                                     win->hwndFrame, nullptr, GetModuleHandle(nullptr), nullptr);
@@ -1564,6 +1704,10 @@ static void OpenResearchBrowserAt(MainWindow* win, int service, Str initialUrl, 
                                         (HMENU)102, nullptr, nullptr);
     CreateWindowExW(0, WC_BUTTON, L"Close", WS_CHILD | WS_VISIBLE, 980, 4, 76, 24, browser->hwnd,
                     (HMENU)(INT_PTR)kResearchCloseBtn, nullptr, nullptr);
+    CreateWindowExW(0, WC_BUTTON, L"Dock", WS_CHILD | WS_VISIBLE, 0, 0, 72, 24, browser->hwnd,
+                    (HMENU)(INT_PTR)kResearchDockBtn, nullptr, nullptr);
+    CreateWindowExW(0, WC_BUTTON, L"Minimize", WS_CHILD | WS_VISIBLE, 0, 0, 76, 24, browser->hwnd,
+                    (HMENU)(INT_PTR)kResearchCollapseBtn, nullptr, nullptr);
     if (service) {
         browser->save = CreateWindowExW(0, WC_BUTTON, L"Save PDF", WS_CHILD | WS_VISIBLE, 980, 4, 92, 24, browser->hwnd,
                                         (HMENU)103, nullptr, nullptr);
@@ -1596,7 +1740,11 @@ static void OpenResearchBrowserAt(MainWindow* win, int service, Str initialUrl, 
         browser->web->SetHtml(
             StrL("<p>Enter a Sci-Hub HTTPS endpoint above, then enter a DOI, PMID, publisher URL or paper title and "
                  "press Search.</p>"));
-    ShowWindow(browser->hwnd, SW_SHOW);
+    VecAppend(gResearchBrowsers, browser);
+    if (mode == BrowserMode::Docked)
+        SetBrowserMode(browser, mode);
+    else
+        ShowWindow(browser->hwnd, SW_SHOW);
     if (gForTesting) gTestResearchBrowser = browser;
     SendMessageW(browser->hwnd, WM_SIZE, 0, 0);
 }
@@ -1612,6 +1760,35 @@ void OpenSciHubBrowser(MainWindow* win, Str endpoint, Str query) {
 TempStr TestResearchToolsTemp(MainWindow* win, Str action, Str a, Str b, Str c, int* code) {
     *code = 1;
     if (!gForTesting) return str::DupTemp(StrL("testing only"));
+    static Tooltip* testTip = nullptr;
+    if (str::Eq(action, StrL("tooltip-edge"))) {
+        MONITORINFO mi{sizeof(mi)};
+        GetMonitorInfoW(MonitorFromWindow(win->hwndFrame, MONITOR_DEFAULTTONEAREST), &mi);
+        RECT r = mi.rcWork;
+        Point cursor{r.right - 2, r.bottom - 2};
+        Size size{200, 60};
+        Point pos = TooltipPosForCursor(win->hwndFrame, cursor, size);
+        *code = 0;
+        return fmt("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", cursor.x, cursor.y, pos.x, pos.y, size.dx, size.dy, r.left, r.top,
+                   r.right, r.bottom);
+    }
+    if (str::Eq(action, StrL("tooltip-show"))) {
+        delete testTip;
+        testTip = new Tooltip();
+        Tooltip::CreateArgs args;
+        args.parent = win->hwndFrame;
+        testTip->Create(args);
+        Point pos = TooltipPosForCursor(win->hwndFrame, {100, 100}, {200, 24});
+        testTip->SetSingleAt(StrL("Tooltip clearance fixture"), Rect(0, 0, 32, 32), pos, false, 0);
+        *code = 0;
+        return str::DupTemp(StrL("shown"));
+    }
+    if (str::Eq(action, StrL("tooltip-hide"))) {
+        delete testTip;
+        testTip = nullptr;
+        *code = 0;
+        return str::DupTemp(StrL("hidden"));
+    }
     if (str::Eq(action, StrL("paper-filename"))) {
         *code = 0;
         return PaperFileNameTemp(a);
@@ -1621,7 +1798,7 @@ TempStr TestResearchToolsTemp(MainWindow* win, Str action, Str a, Str b, Str c, 
         return ConnectedPaperUrl(len(a) ? a : ConnectedPaperQuery(win->CurrentTab()));
     }
     if (str::Eq(action, StrL("browser-open")) && ResearchUrlAllowed(a)) {
-        OpenResearchBrowserAt(win, 0, a);
+        OpenResearchBrowserAt(win, 0, a, {}, {}, BrowserMode::Floating);
         if (!gTestResearchBrowser) return str::DupTemp(StrL("no browser"));
         *code = 0;
         return str::DupTemp(StrL("opened"));
@@ -1630,8 +1807,9 @@ TempStr TestResearchToolsTemp(MainWindow* win, Str action, Str a, Str b, Str c, 
         *code = 0;
         auto* browser = gTestResearchBrowser;
         if (!browser) return str::DupTemp(StrL("closed"));
-        return fmt("ready=%d separate=%d profile=%s\n%s", browser->web->webview ? 1 : 0,
-                   browser->web->profile == WebViewProfile::Separate ? 1 : 0, browser->web->dataDir, browser->probe);
+        return fmt("ready=%d separate=%d profile=%s docked=%d collapsed=%d\n%s", browser->web->webview ? 1 : 0,
+                   browser->web->profile == WebViewProfile::Separate ? 1 : 0, browser->web->dataDir,
+                   browser->docked ? 1 : 0, browser->collapsed ? 1 : 0, browser->probe);
     }
     if (str::Eq(action, StrL("browser-js")) && gTestResearchBrowser) {
         gTestResearchBrowser->web->Eval(a);

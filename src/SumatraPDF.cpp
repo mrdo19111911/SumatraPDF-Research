@@ -7739,7 +7739,8 @@ static bool IsUiLayoutEq(UILayout* s1, UILayout* s2) {
            s1->toolbarSize == s2->toolbarSize && s1->toolbarRight == s2->toolbarRight &&
            s1->sidebarTopVisible == s2->sidebarTopVisible && s1->sidebarBottomVisible == s2->sidebarBottomVisible &&
            s1->favoritesAsTab == s2->favoritesAsTab && s1->showMenuBarRebar == s2->showMenuBarRebar &&
-           s1->aiChatVisible == s2->aiChatVisible && s1->paperMap == s2->paperMap && s1->aiChatDx == s2->aiChatDx &&
+           s1->aiChatVisible == s2->aiChatVisible && s1->paperMap == s2->paperMap &&
+           s1->researchBrowser == s2->researchBrowser && s1->aiChatDx == s2->aiChatDx &&
            s1->sidebarOnRight == s2->sidebarOnRight;
 }
 
@@ -7890,7 +7891,8 @@ static bool RelayoutFrame(MainWindow* win, bool updateToolbars, int sidebarDx) {
         toolbarChromeDy += GetMenuBarRebarHeight(win);
     int toolbarPanelsDx =
         (win->uiState.sidebarTopVisible || win->uiState.sidebarBottomVisible) ? win->sidebarDx + kSplitterDx : 0;
-    if (win->uiState.aiChatVisible || PaperMapHwnd(win)) toolbarPanelsDx += win->aiChatDx + kSplitterDx;
+    if (win->uiState.aiChatVisible || PaperMapHwnd(win) || ResearchBrowserHwnd(win))
+        toolbarPanelsDx += win->aiChatDx + kSplitterDx;
     Size toolbarSize = UpdateToolbarPlacement(win, {rc.dx, std::max(1, rc.dy - toolbarChromeDy)}, toolbarPanelsDx);
     bool toolbarRight = win->toolbarVirt && win->toolbarVirt->vertical;
     // build a snapshot of all state that affects layout
@@ -7913,6 +7915,7 @@ static bool RelayoutFrame(MainWindow* win, bool updateToolbars, int sidebarDx) {
     curState.showMenuBarRebar = IsShowingMenuBarRebar(win);
     curState.aiChatVisible = win->uiState.aiChatVisible;
     curState.paperMap = PaperMapHwnd(win);
+    curState.researchBrowser = ResearchBrowserHwnd(win);
     curState.aiChatDx = win->aiChatDx;
     curState.sidebarOnRight = SidebarOnRightLayout();
 
@@ -7955,7 +7958,8 @@ static bool RelayoutFrame(MainWindow* win, bool updateToolbars, int sidebarDx) {
         bool topVis = !favAsTab && ui.sidebarTopVisible;
         bool bottomVis = !favAsTab && ui.sidebarBottomVisible;
         HWND map = PaperMapHwnd(win);
-        bool aiVis = !favAsTab && ui.aiChatVisible && !map;
+        HWND browser = ResearchBrowserHwnd(win);
+        bool aiVis = !favAsTab && ui.aiChatVisible && !map && !browser;
         win->sidebarSplitter->SetIsVisible(topVis || bottomVis);
         HwndSetVisible(win->sidebarTop->hwnd, topVis);
         win->sidebarPanelsSplitter->SetIsVisible(topVis && bottomVis);
@@ -7967,8 +7971,9 @@ static bool RelayoutFrame(MainWindow* win, bool updateToolbars, int sidebarDx) {
         if (win->hwndAiChatBox) {
             HwndSetVisible(win->hwndAiChatBox, aiVis);
         }
-        win->aiChatSplitter->SetIsVisible(aiVis || map);
+        win->aiChatSplitter->SetIsVisible(aiVis || map || browser);
         RelayoutPaperMap(win);
+        RelayoutResearchBrowser(win);
     }
 
     if (gRedrawLog) {
@@ -8033,7 +8038,8 @@ static bool RelayoutFrame(MainWindow* win, bool updateToolbars, int sidebarDx) {
     bool topVisible = !favAsTab && win->uiState.sidebarTopVisible;
     bool bottomVisible = !favAsTab && win->uiState.sidebarBottomVisible;
     bool sidebarVisible = topVisible || bottomVisible;
-    HWND rightPanel = PaperMapHwnd(win);
+    HWND rightPanel = ResearchBrowserHwnd(win);
+    if (!rightPanel) rightPanel = PaperMapHwnd(win);
     if (!rightPanel && win->uiState.aiChatVisible) rightPanel = win->hwndAiChatBox;
     bool aiChatVisible = !favAsTab && rightPanel;
     bool showCaption = !win->presentation && !win->isFullScreen && win->tabsInTitlebar;
@@ -8271,7 +8277,7 @@ static bool RelayoutFrame(MainWindow* win, bool updateToolbars, int sidebarDx) {
         // (issue #5866). Matches EndFrameRedrawSuppression, which has always done this.
         RedrawWindow(win->hwndFrame, nullptr, nullptr, RDW_ERASE | RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_FRAME);
     }
-    if (win->uiState.aiChatVisible && win->hwndAiChatBox && !PaperMapHwnd(win)) {
+    if (win->uiState.aiChatVisible && win->hwndAiChatBox && !PaperMapHwnd(win) && !ResearchBrowserHwnd(win)) {
         RelayoutAIChatPanel(win);
     }
     // A frame-size drag does not move the splitter; invalidating it paints a

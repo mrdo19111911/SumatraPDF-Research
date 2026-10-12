@@ -677,6 +677,7 @@ struct Tooltip : ControlBase {
 };
 
 int TooltipGetCount(HWND hwnd);
+Point TooltipPosForCursor(HWND owner, Point cursor, Size tipSize);
 void TooltipRemoveAll(HWND hwnd);
 
 //--- Edit

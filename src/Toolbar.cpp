@@ -3611,16 +3611,26 @@ struct ToolbarGroup : ILayout {
         int width = tb->vertical ? std::min(bc.max.dx, DpiScale(112)) : bc.max.dx;
         label->SetVisibility(compact ? Visibility::Collapse : Visibility::Visible);
         labelSize = compact ? Size{} : label->Layout(ExpandInf());
-        contentSize = content->Layout(Loose({std::max(1, width - 2 * pad), Inf}));
-        return {std::max(contentSize.dx, labelSize.dx) + 2 * pad, contentSize.dy + labelSize.dy + 2 * pad};
+        int labelDx = !tb->vertical && labelSize.dx ? labelSize.dx + DpiScale(6) : 0;
+        contentSize = content->Layout(Loose({std::max(1, width - 2 * pad - labelDx), Inf}));
+        if (tb->vertical)
+            return {std::max(contentSize.dx, labelSize.dx) + 2 * pad, contentSize.dy + labelSize.dy + 2 * pad};
+        return {labelDx + contentSize.dx + 2 * pad, std::max(contentSize.dy, labelSize.dy) + 2 * pad};
     }
     int MinIntrinsicWidth(int height) override { return Layout(Loose({Inf, height})).dx; }
     int MinIntrinsicHeight(int width) override { return Layout(Loose({width, Inf})).dy; }
     void SetBounds(Rect bounds) override {
         ILayout::SetBounds(bounds);
         int pad = tb->compact && !tb->vertical ? 0 : DpiScale(4);
-        label->SetBounds({bounds.x + pad, bounds.y + pad, bounds.dx - 2 * pad, labelSize.dy});
-        content->SetBounds({bounds.x + pad, bounds.y + pad + labelSize.dy, contentSize.dx, contentSize.dy});
+        if (tb->vertical) {
+            label->SetBounds({bounds.x + pad, bounds.y + pad, bounds.dx - 2 * pad, labelSize.dy});
+            content->SetBounds({bounds.x + pad, bounds.y + pad + labelSize.dy, contentSize.dx, contentSize.dy});
+            return;
+        }
+        int labelDx = labelSize.dx ? labelSize.dx + DpiScale(6) : 0;
+        label->SetBounds({bounds.x + pad, bounds.y + (bounds.dy - labelSize.dy) / 2, labelSize.dx, labelSize.dy});
+        content->SetBounds(
+            {bounds.x + pad + labelDx, bounds.y + (bounds.dy - contentSize.dy) / 2, contentSize.dx, contentSize.dy});
     }
 };
 

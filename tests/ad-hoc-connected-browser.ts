@@ -2,7 +2,19 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ControlCommand, withControlledSumatra } from "./control";
 import { EXE, assemblePdf, runStandalone, tmpPath } from "./util";
-import { enumWindows, getWindowPid, getWindowText, moveWindow, postMessage, sleep } from "./winapi";
+import {
+  enumWindows,
+  getWindowPid,
+  getWindowText,
+  getWindowRect,
+  getWindowLong,
+  sendMessage,
+  enumChildWindows,
+  getParentWindow,
+  moveWindow,
+  postMessage,
+  sleep,
+} from "./winapi";
 
 export async function testit(): Promise<void> {
   const root = tmpPath(`connected-browser-${Date.now()}`);
@@ -62,6 +74,13 @@ export async function testit(): Promise<void> {
           let deadline = Date.now() + 5000;
           while (!findBrowser() && Date.now() < deadline) await sleep(50);
           if (!findBrowser()) throw new Error("Browser did not open");
+          const bounds = getWindowRect(findBrowser());
+          const point = ((bounds.top + 2) << 16) | ((bounds.left + 2) & 0xffff);
+          const hit = Number(sendMessage(findBrowser(), 0x0084, 0, point));
+          if (hit !== 13) throw new Error(`Top-left resize border is not interactive: ${hit}`);
+          sendMessage(findBrowser(), 0x0112, 0xf020, 0);
+          if (!(getWindowLong(findBrowser(), -16) & 0x20000000)) throw new Error("Browser cannot minimize");
+          sendMessage(findBrowser(), 0x0112, 0xf120, 0);
           postMessage(findBrowser(), 0x0010, 0, 0);
           while (findBrowser() && Date.now() < deadline) await sleep(50);
           if (findBrowser()) throw new Error("WM_CLOSE leaves Connected Papers open");
@@ -79,6 +98,28 @@ export async function testit(): Promise<void> {
           }
           if (!state.includes('"title":"Profile fixture"') || !state.includes("separate=1"))
             throw new Error(`Browser not ready: ${state}`);
+          const floating = findBrowser();
+          const owner = getParentWindow(floating);
+          sendMessage(floating, 0x0111, 105, 0);
+          let docked = 0;
+          enumChildWindows(owner, (hwnd) => {
+            if (getWindowText(hwnd).startsWith("Connected Papers")) docked = hwnd;
+            return true;
+          });
+          if (docked !== floating || !(getWindowLong(docked, -16) & 0x40000000))
+            throw new Error("Dock does not attach the browser to the PDF frame");
+          await client.waitForRenderIdle();
+          const dockState = await check(["browser-state"]);
+          if (!dockState.includes("docked=1 collapsed=0")) throw new Error(`Dock state: ${dockState}`);
+          sendMessage(docked, 0x0111, 106, 0);
+          if (!(await check(["browser-state"])).includes("collapsed=1"))
+            throw new Error("Hide does not collapse the pane");
+          await client.request(ControlCommand.TestInvokeCommand, ["CmdConnectedPapers"]);
+          if (!(await check(["browser-state"])).includes("docked=1 collapsed=0"))
+            throw new Error("Toolbar does not restore the collapsed pane");
+          sendMessage(docked, 0x0111, 105, 0);
+          if (findBrowser() !== floating || getWindowLong(floating, -16) & 0x40000000)
+            throw new Error("Float does not detach browser");
           if (run === 0)
             await check([
               "browser-js",

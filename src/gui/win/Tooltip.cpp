@@ -3,6 +3,7 @@
 
 #include "base/Base.h"
 #include "base/Win.h"
+#include "gui/Dpi.h"
 
 #include "gui/UIModels.h"
 
@@ -142,11 +143,12 @@ static Size TooltipGetBubbleSize(HWND hwndTT, HWND owner, int id) {
 // TTF_ABSOLUTE disables the tooltip control's own edge-flip, so a wide
 // annotation / link tip at the right (or bottom) of the screen was clipped
 // (issue #6002). Shift (x,y) so a tip of size tipSz stays in the work area.
-static void ClampTipPosToWorkArea(int& x, int& y, Size tipSz) {
+static void ClampTipPosToWorkArea(int& x, int& y, Size tipSz, const Point* anchor = nullptr) {
     if (tipSz.dx <= 0 || tipSz.dy <= 0) {
         return;
     }
-    HMONITOR mon = MonitorFromPoint(POINT{x, y}, MONITOR_DEFAULTTONEAREST);
+    POINT point{anchor ? anchor->x : x, anchor ? anchor->y : y};
+    HMONITOR mon = MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi{sizeof(mi)};
     if (!GetMonitorInfoW(mon, &mi)) {
         return;
@@ -194,6 +196,23 @@ static void TooltipTrackActivateAtScreen(HWND hwndTT, HWND owner, int id, int sc
     TooltipMoveOntoWorkArea(hwndTT);
 }
 
+Point TooltipPosForCursor(HWND owner, Point cursor, Size tipSize) {
+    constexpr int kCursorBox = 32;
+    constexpr int kTipGap = 16;
+    int dpi = DpiGetForHwnd(owner);
+    int gap = DpiScaleByDpi(dpi, kTipGap);
+    int cursorSize = DpiScaleByDpi(dpi, kCursorBox);
+    int x = cursor.x + gap;
+    int y = cursor.y + cursorSize + gap;
+    ClampTipPosToWorkArea(x, y, tipSize, &cursor);
+    if (x < cursor.x + cursorSize && x + tipSize.dx > cursor.x && y < cursor.y + cursorSize &&
+        y + tipSize.dy > cursor.y) {
+        y = cursor.y - tipSize.dy - gap;
+        ClampTipPosToWorkArea(x, y, tipSize, &cursor);
+    }
+    return {x, y};
+}
+
 static void TooltipTrackActivateAtCursor(HWND hwndTT, HWND owner, int id) {
     if (!hwndTT || !owner || id == 0) {
         return;
@@ -202,11 +221,13 @@ static void TooltipTrackActivateAtCursor(HWND hwndTT, HWND owner, int id) {
     if (!GetCursorPos(&pt)) {
         return;
     }
-    // Slight offset so the tip is not under the cursor hot-spot.
-    int x = pt.x + 12;
-    int y = pt.y + 18;
-    ClampTipPosToWorkArea(x, y, TooltipGetBubbleSize(hwndTT, owner, id));
-    TooltipTrackActivateAtScreen(hwndTT, owner, id, x, y);
+    Point pos = TooltipPosForCursor(owner, {pt.x, pt.y}, TooltipGetBubbleSize(hwndTT, owner, id));
+    TooltipTrackActivateAtScreen(hwndTT, owner, id, pos.x, pos.y);
+    RECT r{};
+    if (GetWindowRect(hwndTT, &r)) {
+        pos = TooltipPosForCursor(owner, {pt.x, pt.y}, {r.right - r.left, r.bottom - r.top});
+        SetWindowPos(hwndTT, nullptr, pos.x, pos.y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
 }
 
 Tooltip::Tooltip() {
