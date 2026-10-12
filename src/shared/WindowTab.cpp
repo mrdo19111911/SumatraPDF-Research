@@ -56,6 +56,9 @@ void WindowTab::SetFilePath(Str path) {
                 st.process = nullptr;
             }
             str::FreePtr(&st.sessionId);
+            str::FreePtr(&st.question);
+            st.triedMask = 0;
+            st.retryable = false;
             st.chatLog.Reset();
         }
 #endif
@@ -184,6 +187,7 @@ WindowTab::~WindowTab() {
 #if !defined(SUMATRA_NG)
     for (AIChatTabState& st : aiChat) {
         str::Free(st.sessionId);
+        str::Free(st.question);
         st.sessionId = {};
         if (st.process) {
             TerminateProcess(st.process, 0);

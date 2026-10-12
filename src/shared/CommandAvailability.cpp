@@ -401,8 +401,8 @@ CommandVisibility GetCommandVisibility(int cmdId, const AppCommandCtx& ctx, Comm
         return CommandVisibility::Hide;
     }
 
-    if (cmdId == CmdAIChatWithClaudeCode || cmdId == CmdAIChatWithGrokBuild || cmdId == CmdAIChatWithOpenAICodex ||
-        cmdId == CmdAIChatWithAntiGravity) {
+    if (cmdId == CmdPaperChat || cmdId == CmdAIChatWithClaudeCode || cmdId == CmdAIChatWithGrokBuild ||
+        cmdId == CmdAIChatWithOpenAICodex || cmdId == CmdAIChatWithAntiGravity) {
         if (!ctx.aiChatAvailable) {
             return CommandVisibility::Hide;
         }

@@ -6,10 +6,10 @@
 
 // CURR_VERSION can be over-written externally
 #ifndef CURR_VERSION
-#define CURR_VERSION 3.7
+#define CURR_VERSION 4.8.1
 #endif
 #ifndef CURR_VERSION_COMMA
-#define CURR_VERSION_COMMA 3, 7, 0
+#define CURR_VERSION_COMMA 4, 8, 1
 #endif
 
 // this is sth. like "3.5"
@@ -58,3 +58,4 @@
 #define kPublisherStr "Krzysztof Kowalczyk"
 
 #define kAppName "SumatraPDFResearch"
+#define kAppDisplayName "SumatraPDF Research"

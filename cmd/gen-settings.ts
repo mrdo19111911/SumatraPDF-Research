@@ -1901,6 +1901,17 @@ const globalPrefs: Field[] = [
   emptyLine(),
   struct("AntiGravity", antiGravity, "settings for the Antigravity chat sidebar").ver("3.7"),
   emptyLine(),
+  field("AIChatDefaultBackend", Str, "auto", "AI chat backend: auto, claude, codex, grok or antigravity"),
+  field("AIChatAutoFallback", Bool, true, "in Auto mode, try another installed backend after a quota or login error"),
+  field(
+    "ResearchFloatingTools",
+    Bool,
+    true,
+    "show a draggable tool launcher over the document instead of a navigation bar",
+  ),
+  field("ResearchToolsX", Int, -1, "floating tools horizontal position in document DIPs (-1 = automatic)").internal(),
+  field("ResearchToolsY", Int, -1, "floating tools vertical position in document DIPs (-1 = automatic)").internal(),
+  emptyLine(),
   field(
     "AIChatSidebarDx",
     Int,

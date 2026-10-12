@@ -3,6 +3,8 @@
 
 struct MainWindow;
 struct WindowTab;
+struct ILayout;
+ILayout* NewResearchPane(MainWindow* win);
 enum class ResearchAction {
     Menu,
     Narration,

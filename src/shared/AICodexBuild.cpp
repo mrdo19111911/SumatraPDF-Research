@@ -24,14 +24,12 @@
 
 #include "SumatraLog.h"
 
-static bool gCodexExecutableSearched = false;
 static Str gCodexExecutablePath;
 
 static TempStr FindCodexExecutableTemp() {
-    if (gCodexExecutableSearched) {
+    if (gCodexExecutablePath && file::Exists(gCodexExecutablePath)) {
         return gCodexExecutablePath;
     }
-    gCodexExecutableSearched = true;
 
     StrVec candidates;
     TempStr userProfile = AIChatHomeDirTemp();
@@ -44,7 +42,25 @@ static TempStr FindCodexExecutableTemp() {
         candidates.Append(path::JoinTemp(userProfile, StrL(".local/bin/codex")));
 #endif
     }
-    gCodexExecutablePath = str::Dup(AIChatFindExecutableTemp(candidates, StrL("codex.exe"), StrL("codex")));
+    TempStr exe = AIChatFindExecutableTemp(candidates, StrL("codex.exe"), StrL("codex"));
+#if OS_WIN
+    if (len(exe) == 0) {
+        FILETIME newest{};
+        DirIter dirs(path::JoinTemp(GetSpecialFolderTemp(CSIDL_LOCAL_APPDATA), StrL("OpenAI/Codex/bin")));
+        dirs.includeDirs = true;
+        dirs.includeFiles = false;
+        for (DirIterEntry* dir : dirs) {
+            TempStr candidate = path::JoinTemp(dir->filePath, StrL("codex.exe"));
+            if (!file::Exists(candidate)) continue;
+            FILETIME time = file::GetModificationTime(candidate);
+            if (len(exe) == 0 || CompareFileTime(&time, &newest) > 0) {
+                exe = str::DupTemp(candidate);
+                newest = time;
+            }
+        }
+    }
+#endif
+    str::ReplaceWithCopy(&gCodexExecutablePath, exe);
     return gCodexExecutablePath;
 }
 
@@ -524,8 +540,13 @@ struct CodexBuildProvider : AIChatProvider {
                     AIChatPostUpdate(ctx, AIChatUpdateType::Flush, {});
                 }
             }
+        } else if (eventType && (str::Eq(eventType, StrL("error")) || str::Eq(eventType, StrL("turn.failed")))) {
+            TempStr error = AIChatJsonStrTemp(line, StrL("message"));
+            AIChatPostUpdate(ctx, AIChatUpdateType::Error, error ? error : StrL("OpenAI Codex request failed."));
+            if (str::Eq(eventType, StrL("turn.failed"))) AIChatPostUpdate(ctx, AIChatUpdateType::Finished, {});
         } else if (eventType && str::Eq(eventType, StrL("turn.completed"))) {
             AIChatPostUpdate(ctx, AIChatUpdateType::Flush, {});
+            AIChatPostUpdate(ctx, AIChatUpdateType::Finished, {});
         }
     }
 };

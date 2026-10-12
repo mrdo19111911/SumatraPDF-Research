@@ -47,6 +47,98 @@
 #include "Grobid.h"
 #include "ResearchTools.h"
 
+static void UpdateBrowserThemes();
+
+enum class ResearchPane {
+    Chat,
+    Map,
+    Related,
+    Close
+};
+
+static ResearchPane ActiveResearchPane(MainWindow* win) {
+    if (ResearchBrowserHwnd(win)) return ResearchPane::Related;
+    if (PaperMapHwnd(win)) return ResearchPane::Map;
+    return ResearchPane::Chat;
+}
+
+struct ResearchPaneTab : VirtButton {
+    MainWindow* win;
+    ResearchPane pane;
+    ResearchPaneTab(MainWindow* w, ResearchPane p, Str label) : VirtButton(label, GetAppFont()), win(w), pane(p) {}
+    Size GetIdealSize() override { return {DpiScale(pane == ResearchPane::Close ? 44 : 80), DpiScale(44)}; }
+    void Paint(VirtPaintCtx& ctx) override {
+        bool selected = pane == ActiveResearchPane(win);
+        Color bg = HasFlag(vwfHovered) ? ThemeHotBackgroundColor() : ThemeControlBackgroundColor();
+        ctx.gfx->FillRect(ctx.bounds, bg);
+        font = GetAppFontForDpi(DpiGetForHwnd(win->hwndFrame));
+        Color fg = selected ? ThemeWindowLinkColor() : ThemeWindowTextColor();
+        ctx.gfx->DrawText(s, ctx.bounds, gfxTextCenter | gfxTextVCenter | gfxTextEllipsis, font, fg);
+        if (selected) {
+            Rect r = ctx.bounds;
+            r.SubLR(DpiScale(10), DpiScale(10));
+            ctx.gfx->FillRoundedRect({r.x, r.Bottom() - DpiScale(3), r.dx, DpiScale(3)}, DpiScale(2), fg);
+        }
+        if (HasFlag(vwfFocused)) ctx.gfx->DrawFocusRect(ctx.bounds);
+    }
+    void Activate() {
+        if (pane == ResearchPane::Close) {
+            HidePaperMap(win);
+            HideResearchBrowser(win);
+            HidePaperChat(win);
+        } else if (pane == ResearchPane::Chat) {
+            ShowPaperChat(win);
+        } else if (pane != ActiveResearchPane(win)) {
+            if (pane == ResearchPane::Map) TogglePaperMap(win);
+            if (pane == ResearchPane::Related) OpenResearchBrowser(win, 0);
+        }
+        HwndInvalidate(win->hwndFrame);
+    }
+};
+
+struct ResearchDock : ILayout {
+    MainWindow* win;
+    HBox* tabs;
+    int headerDy = 0;
+    explicit ResearchDock(MainWindow* w) : win(w), tabs(new HBox()) {
+        tabs->alignCross = CrossAxisAlign::Stretch;
+        const Str labels[] = {StrL("Chat"), StrL("KG"), StrL("Related"), StrL("×")};
+        const Str tips[] = {StrL("Chat with this paper"), StrL("Paper knowledge map"), StrL("Connected Papers"),
+                            StrL("Close research pane; restore automatic PDF fit")};
+        for (int i = 0; i < dimof(labels); i++) {
+            auto* tab = new ResearchPaneTab(win, (ResearchPane)i, labels[i]);
+            tab->SetTooltip(tips[i]);
+            tab->onClick = MkFunc0(+[](ResearchPaneTab* t) { t->Activate(); }, tab);
+            tabs->AddChild(tab, i == (int)ResearchPane::Close ? 0 : 1);
+        }
+        win->researchTabs = tabs;
+    }
+    ~ResearchDock() override {
+        delete tabs;
+        delete win->aiChatSlot;
+    }
+    int LayoutChildCount() override { return 2; }
+    ILayout* LayoutChildAt(int i) override { return i == 0 ? (ILayout*)tabs : win->aiChatSlot; }
+    Size Layout(Constraints bc) override {
+        Size size = bc.Constrain({win->aiChatSlot->dx, bc.max.dy});
+        headerDy = std::min(DpiScale(44), size.dy);
+        tabs->Layout(Tight({size.dx, headerDy}));
+        win->aiChatSlot->Layout(Tight({size.dx, size.dy - headerDy}));
+        return size;
+    }
+    int MinIntrinsicWidth(int) override { return win->aiChatSlot->dx; }
+    int MinIntrinsicHeight(int) override { return DpiScale(44); }
+    void SetBounds(Rect r) override {
+        ILayout::SetBounds(r);
+        tabs->SetBounds({r.x, r.y, r.dx, headerDy});
+        win->aiChatSlot->SetBounds({r.x, r.y + headerDy, r.dx, r.dy - headerDy});
+    }
+};
+
+ILayout* NewResearchPane(MainWindow* win) {
+    return new ResearchDock(win);
+}
+
 enum class ResearchTask {
     Extract,
     Narrate,
@@ -852,6 +944,7 @@ void HidePaperMap(MainWindow* win) {
 void TogglePaperMap(MainWindow* win) {
     if (!win || !win->AsFixed()) return;
     HideResearchBrowser(win);
+    HidePaperChat(win);
     for (auto* report : gPaperReports) {
         if (!report->graph || report->tab != win->CurrentTab()) continue;
         if (report->engine != report->tab->GetEngine()) {
@@ -989,9 +1082,9 @@ static void PaperReportTheme(PaperReport* report) {
             "s.setProperty('--muted','%s');s.setProperty('--user','%s');"
             "s.setProperty('--border','%s');s.setProperty('--code-bg','%s');"
             "s.setProperty('--error','%s');s.colorScheme='%s'}",
-            ColorToCssTemp(bg), ColorToCssTemp(ThemeWindowTextColor()), dark ? StrL("#a0a0a0") : StrL("#555555"),
-            dark ? StrL("#7fb3d5") : StrL("#1a5276"), dark ? StrL("#4a4a4a") : StrL("#cccccc"),
-            dark ? StrL("#3a3a3a") : StrL("#f0f0f0"), dark ? StrL("#e74c3c") : StrL("#c0392b"),
+            ColorToCssTemp(bg), ColorToCssTemp(ThemeWindowTextColor()), ColorToCssTemp(ThemeWindowDarkerTextColor()),
+            ColorToCssTemp(ThemeWindowLinkColor()), ColorToCssTemp(ThemeEdgeColor()),
+            dark ? StrL("#333333") : StrL("#f5f5f5"), dark ? StrL("#e74c3c") : StrL("#c0392b"),
             dark ? StrL("dark") : StrL("light")));
     DarkModeApplyToTitleBar(report->hwnd);
     DarkModeApplyToChildControls(report->hwnd);
@@ -1000,6 +1093,7 @@ static void PaperReportTheme(PaperReport* report) {
 
 void UpdateResearchTheme() {
     for (auto* report : gPaperReports) PaperReportTheme(report);
+    UpdateBrowserThemes();
 }
 
 // Tokenize math before Markdown consumes its backslashes; render after sanitizing.
@@ -1303,6 +1397,7 @@ static void ShowPaperReport(ResearchJob* job) {
         MainWindow* win = FindMainWindowByHwnd(job->owner);
         if (win && win->CurrentTab() == report->tab) {
             HideResearchBrowser(win);
+            HidePaperChat(win);
             if (win->aiChatDx <= 0) win->aiChatDx = HwndClientRect(win->hwndFrame).dx / 2;
             report->tab->portraitViewAuto = true;
             report->tab->portraitViewOnOpenPending = true;
@@ -1333,6 +1428,15 @@ struct ResearchBrowser {
 
 static ResearchBrowser* gTestResearchBrowser = nullptr;
 static Vec<ResearchBrowser*> gResearchBrowsers;
+
+static void UpdateBrowserThemes() {
+    for (auto* browser : gResearchBrowsers) {
+        DarkModeApplyToTitleBar(browser->hwnd);
+        DarkModeApplyToWindowAndEraseBg(browser->hwnd);
+        DarkModeApplyToChildControls(browser->hwnd);
+        HwndInvalidate(browser->hwnd, true);
+    }
+}
 constexpr UINT_PTR kResearchSizeTimer = 1;
 constexpr int kResearchCloseBtn = 104;
 constexpr int kResearchDockBtn = 105;
@@ -1389,6 +1493,7 @@ static void SetBrowserMode(ResearchBrowser* browser, BrowserMode mode) {
         GetWindowRect(browser->hwnd, &browser->floatingRect);
         HideResearchBrowser(browser->owner);
         HidePaperMap(browser->owner);
+        HidePaperChat(browser->owner);
         SetWindowLongPtrW(browser->hwnd, GWL_STYLE, WS_CHILD | WS_CLIPCHILDREN);
         SetWindowLongPtrW(browser->hwnd, GWL_EXSTYLE, 0);
         SetParent(browser->hwnd, browser->ownerHwnd);
@@ -1564,7 +1669,8 @@ static LRESULT CALLBACK ResearchBrowserProc(HWND hwnd, UINT msg, WPARAM wp, LPAR
     if (msg == WM_SIZE) {
         RECT r{};
         GetClientRect(hwnd, &r);
-        int margin = DpiScale(8), gap = DpiScale(4), height = DpiScale(24), buttonWidth = DpiScale(76);
+        int margin = DpiScale(12), gap = DpiScale(8), height = DpiScale(36), buttonWidth = DpiScale(92);
+        PlatformFont* font = GetAppFontForDpi(DpiGetForHwnd(hwnd));
         HWND buttons[] = {browser->search,
                           browser->external,
                           browser->save,
@@ -1578,14 +1684,17 @@ static LRESULT CALLBACK ResearchBrowserProc(HWND hwnd, UINT msg, WPARAM wp, LPAR
         int index = 0;
         for (HWND button : buttons) {
             if (!button) continue;
+            HwndSetFont(button, font->GetHFont());
             MoveWindow(button, margin + index % columns * (cellWidth + gap), gap + index / columns * (height + gap),
                        cellWidth, height, TRUE);
             index++;
         }
         int top = gap + (count + columns - 1) / columns * (height + gap);
+        HwndSetFont(browser->input, font->GetHFont());
         MoveWindow(browser->input, margin, top, width, height, TRUE);
         top += height + gap;
         if (browser->endpoint) {
+            HwndSetFont(browser->endpoint, font->GetHFont());
             MoveWindow(browser->endpoint, margin, top, width, height, TRUE);
             top += height + gap;
         }
@@ -1662,6 +1771,7 @@ static void OpenResearchBrowserAt(MainWindow* win, int service, Str initialUrl, 
         if (existing->docked) {
             HideResearchBrowser(win);
             HidePaperMap(win);
+            HidePaperChat(win);
             existing->collapsed = false;
             ScheduleUiUpdate(win, kUiRelayout | kUiToolbarDirty);
         } else {
@@ -1741,6 +1851,7 @@ static void OpenResearchBrowserAt(MainWindow* win, int service, Str initialUrl, 
             StrL("<p>Enter a Sci-Hub HTTPS endpoint above, then enter a DOI, PMID, publisher URL or paper title and "
                  "press Search.</p>"));
     VecAppend(gResearchBrowsers, browser);
+    UpdateBrowserThemes();
     if (mode == BrowserMode::Docked)
         SetBrowserMode(browser, mode);
     else
@@ -1760,6 +1871,18 @@ void OpenSciHubBrowser(MainWindow* win, Str endpoint, Str query) {
 TempStr TestResearchToolsTemp(MainWindow* win, Str action, Str a, Str b, Str c, int* code) {
     *code = 1;
     if (!gForTesting) return str::DupTemp(StrL("testing only"));
+    if (str::Eq(action, StrL("pane-tabs"))) {
+        str::Builder out;
+        for (int i = 0; i < win->researchTabs->LayoutChildCount(); i++) {
+            auto* tab = static_cast<ResearchPaneTab*>(win->researchTabs->LayoutChildAt(i));
+            Rect r = tab->BoundsInWindow();
+            out.Append(fmt("tab=%s visible=%d active=%d rect=%d,%d,%d,%d\n", tab->s,
+                           tab->GetVisibility() == Visibility::Visible ? 1 : 0,
+                           tab->pane == ActiveResearchPane(win) ? 1 : 0, r.x, r.y, r.Right(), r.Bottom()));
+        }
+        *code = 0;
+        return ToStrTemp(out);
+    }
     static Tooltip* testTip = nullptr;
     if (str::Eq(action, StrL("tooltip-edge"))) {
         MONITORINFO mi{sizeof(mi)};

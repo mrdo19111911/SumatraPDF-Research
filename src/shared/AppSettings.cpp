@@ -1185,7 +1185,7 @@ int GetAppFontSizeForDpi(int dpi) {
     auto fntSize = gSettings->uIFontSize;
     if (fntSize < kMinFontSize) {
         // match the menu font so tabs/toolbar text scale like native menus
-        fntSize = GetAppMenuFontSizeForDpi(dpi);
+        fntSize = std::max(GetAppMenuFontSizeForDpi(dpi), DpiScaleByDpi(dpi, 16));
     }
     return fntSize;
 }
@@ -1214,7 +1214,7 @@ constexpr int kMinBiggerFontSize = 14;
 static int GetAppBiggerFontSizeForDpi(int dpi) {
     int fntSize = gSettings->uIFontSize;
     if (fntSize < kMinFontSize) {
-        fntSize = GetAppMenuFontSizeForDpi(dpi);
+        fntSize = GetAppFontSizeForDpi(dpi);
         fntSize = (fntSize * 12) / 10;
         fntSize = std::max(fntSize, kMinBiggerFontSize);
     }
@@ -1269,7 +1269,7 @@ PlatformFont* GetAppSidebarLabelFontForDpi(int dpi) {
     if (fonts->sidebarLabelFont) {
         return fonts->sidebarLabelFont;
     }
-    fonts->sidebarLabelFont = GetUserGuiFontEx({}, GetAppBiggerFontSizeForDpi(dpi), true, false);
+    fonts->sidebarLabelFont = GetUserGuiFontEx({}, GetAppBiggerFontSizeForDpi(dpi), false, false);
     return fonts->sidebarLabelFont;
 }
 

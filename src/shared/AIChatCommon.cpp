@@ -647,22 +647,25 @@ static const char* kAIChatHtmlFmt = R"(<!DOCTYPE html><html><head><meta charset=
 <style>
 :root { %s }
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: 'Segoe UI', sans-serif; font-size: 13px; margin: 0; padding: 6px;
-  background: var(--bg); color: var(--fg); line-height: 1.4; }
-p { margin: 2px 0; }
-h1,h2,h3,h4 { margin: 6px 0 2px 0; }
-ul,ol { margin: 2px 0 2px 18px; }
-li { margin: 1px 0; }
-.user { color: var(--user); font-weight: bold; margin: 8px 0 2px 0; padding: 4px 0;
-  border-top: 1px solid var(--border); }
-.tool { color: var(--muted); font-size: 11px; font-style: italic;
-  border-left: 3px solid var(--muted); padding-left: 6px; margin: 2px 0; }
-.assistant { margin: 2px 0; }
-.assistant pre { background: var(--code-bg); padding: 6px; border-radius: 4px;
-  overflow-x: auto; margin: 3px 0; font-size: 12px; }
-.assistant code { background: var(--code-bg); padding: 1px 3px; border-radius: 2px; font-size: 12px; }
+body { font-family: 'Segoe UI', sans-serif; font-size: 16px; margin: 0; padding: 16px;
+  background: var(--bg); color: var(--fg); line-height: 1.6; overflow-wrap: anywhere; }
+p { margin: 8px 0; }
+h1,h2,h3,h4 { margin: 16px 0 8px; font-weight: 600; }
+ul,ol { margin: 8px 0 8px 24px; }
+li { margin: 4px 0; }
+a { color: var(--user); }
+table { border-collapse: collapse; display: block; max-width: 100%%; overflow-x: auto; }
+th,td { padding: 8px; border: 1px solid var(--border); }
+.user { color: var(--fg); font-weight: 600; margin: 16px 0 12px; padding: 12px 16px;
+  background: var(--code-bg); border: 1px solid var(--border); border-radius: 12px; }
+.tool { color: var(--muted); font-size: 13px;
+  border-left: 3px solid var(--user); padding: 4px 12px; margin: 8px 0; }
+.assistant { margin: 12px 0 24px; }
+.assistant pre { background: var(--code-bg); padding: 12px; border-radius: 8px;
+  overflow-x: auto; margin: 12px 0; font-size: 14px; }
+.assistant code { background: var(--code-bg); padding: 2px 4px; border-radius: 4px; font-size: 14px; }
 .assistant pre code { background: none; padding: 0; }
-.error { color: var(--error); font-weight: bold; margin: 4px 0; }
+.error { color: var(--error); margin: 12px 0; padding: 12px; border: 1px solid var(--error); border-radius: 8px; }
 </style></head><body><div id='chat'></div>
 <script>
 var chatDiv = document.getElementById('chat');
@@ -757,10 +760,10 @@ TempStr AIChatFormatChatHtmlTemp(Str virtualHost, Str bgColor) {
     bool dark = followTheme && !IsLightColor(themeBg);
     TempStr bg = followTheme ? ColorToCssTemp(themeBg) : str::DupTemp(bgColor);
     TempStr fg = dark ? ColorToCssTemp(ThemeWindowTextColor()) : str::DupTemp(StrL("#222222"));
-    Str muted = dark ? StrL("#a0a0a0") : StrL("#555555");
-    Str user = dark ? StrL("#7fb3d5") : StrL("#1a5276");
-    Str border = dark ? StrL("#4a4a4a") : StrL("#cccccc");
-    Str codeBg = dark ? StrL("#3a3a3a") : StrL("#f0f0f0");
+    Str muted = dark ? StrL("#bdbdbd") : StrL("#616161");
+    Str user = dark ? StrL("#6bb0f5") : StrL("#0f6cbd");
+    Str border = dark ? StrL("#424242") : StrL("#e0e0e0");
+    Str codeBg = dark ? StrL("#333333") : StrL("#f5f5f5");
     Str error = dark ? StrL("#e74c3c") : StrL("#c0392b");
     TempStr cssVars = fmt("--bg:%s; --fg:%s; --muted:%s; --user:%s; --border:%s; --code-bg:%s; --error:%s;", bg, fg,
                           muted, user, border, codeBg, error);

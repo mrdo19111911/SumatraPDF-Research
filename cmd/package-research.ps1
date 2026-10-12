@@ -1,7 +1,10 @@
-param([string]$Version = '4.7.4')
+param([string]$Version = '')
 $ErrorActionPreference = 'Stop'
-if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid version' }
 $taskRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$builtVersion = (Get-Item -LiteralPath (Join-Path $taskRoot 'out\rel64\SumatraPDF.exe')).VersionInfo.ProductVersion
+if (!$Version) { $Version = $builtVersion }
+if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid version' }
+if ($Version -ne $builtVersion) { throw "Package version $Version does not match executable version $builtVersion" }
 $releaseDir = Join-Path $taskRoot 'out\public-release'
 $baseName = "SumatraPDF-Research-v$Version-x64"
 $portableDir = Join-Path $releaseDir $baseName

@@ -830,6 +830,18 @@ struct Settings {
     // from numbered headings in its text (Generate Table Of Contents
     // command does it on demand)
     bool autoGenerateTOC;
+    // AI chat backend: auto, claude, codex, grok or antigravity
+    Str aiChatDefaultBackend;
+    // in Auto mode, try another installed backend after a quota or login
+    // error
+    bool aiChatAutoFallback;
+    // show a draggable tool launcher over the document instead of a
+    // navigation bar
+    bool researchFloatingTools;
+    // floating tools horizontal position in document DIPs (-1 = automatic)
+    int researchToolsX;
+    // floating tools vertical position in document DIPs (-1 = automatic)
+    int researchToolsY;
     // list of handlers for selected text, shown in context menu when text
     // selection is active. See [docs for more
     // information](https://www.sumatrapdfreader.org/docs/Customize-search-translation-services)
@@ -838,7 +850,7 @@ struct Settings {
     // menu or the command palette
     Vec<TextSnippet*>* textSnippets;
     // For documentation, see
-    // https://www.sumatrapdfreader.org/settings/settings3-7.html
+    // https://www.sumatrapdfreader.org/settings/settings4-7-6.html
     Str googleDriveClientPath;
     // optional path to Zalo PC; otherwise detected automatically
     Str zaloExecutablePath;

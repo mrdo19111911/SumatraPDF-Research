@@ -221,7 +221,15 @@ void TabCtrl::Paint(VirtPaintCtx& ctx) {
         textColor = IsLightColor(tabBgCol) ? MkRgb(0xC4, 0x1E, 0x1E) : MkRgb(0xFF, 0x6A, 0x6A);
     }
 
-    gfx->FillRect(r, tabBgCol);
+    Rect surface = r;
+    surface.SubLR(DpiScale(3), DpiScale(3));
+    surface.SubTB(DpiScale(3), DpiScale(3));
+    gfx->FillRoundedRect(surface, DpiScale(8), tabBgCol);
+    if (IsSelected()) {
+        Rect marker = {surface.x + DpiScale(12), surface.Bottom() - DpiScale(3), std::max(0, surface.dx - DpiScale(24)),
+                       DpiScale(3)};
+        gfx->FillRoundedRect(marker, DpiScale(2), gColsLink[kColText]);
+    }
 
     bool isRtl = IsTabsRtl(hwnd);
     PlatformFont* font = tabsCtrl->GetFont();

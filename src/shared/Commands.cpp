@@ -362,6 +362,7 @@ const CommandInfo gCommands[] = {
     {CmdArxivSearch, "CmdArxivSearch\0", StrL("Search arXiv Papers...")},
     {CmdCollectPapers, "CmdCollectPapers\0", StrL("Collect All Referenced Papers...")},
     {CmdPaperMap, "CmdPaperMap\0", StrL("Paper Knowledge Map")},
+    {CmdPaperChat, "CmdPaperChat\0", StrL("Chat With This Paper")},
 };
 const int gCommandsCount = dimofi(gCommands);
 

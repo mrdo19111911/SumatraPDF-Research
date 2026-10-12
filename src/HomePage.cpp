@@ -315,7 +315,7 @@ void SetPromoString(Str s) {
 }
 
 static TempStr GetAppVersionTemp() {
-    TempStr s = str::DupTemp(StrL("v" CURR_VERSION_STRA));
+    TempStr s = str::DupTemp(StrL("Research v" CURR_VERSION_STRA));
     if (IsProcess64()) {
         s = str::JoinTemp(s, StrL(" 64-bit"));
     } else {
@@ -871,7 +871,7 @@ void ShowAboutWindow(MainWindow* win) {
         ReportIf(!gAtomAbout);
     }
 
-    WCHAR* title = CWStrTemp(Tr("About SumatraPDF"));
+    WCHAR* title = CWStrTemp(StrL("About " kAppDisplayName " " CURR_VERSION_STRA));
     DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
     int x = CW_USEDEFAULT;
     int y = CW_USEDEFAULT;

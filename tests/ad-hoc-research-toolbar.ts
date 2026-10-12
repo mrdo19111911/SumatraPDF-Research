@@ -58,13 +58,13 @@ export async function testit(): Promise<void> {
   ]);
   writeFileSync(
     join(root, "SumatraPDF-settings.txt"),
-    "CheckForUpdates = false\nUiLanguage = en\nTheme = Light\nDocumentColorsFollowTheme = off\nToolbarPosition = top\nEBookUI [\n FontSize = 12\n]\n",
+    "CheckForUpdates = false\nUiLanguage = en\nTheme = Light\nDocumentColorsFollowTheme = off\nResearchFloatingTools = false\nToolbarPosition = top\nEBookUI [\n FontSize = 12\n]\n",
   );
   const required = [
     "CmdToggleReadingDarkMode",
     "CmdIncreaseTextSize",
     "CmdDecreaseTextSize",
-    "CmdAIChatWithClaudeCode",
+    "CmdPaperChat",
     "CmdClearAIChat",
     "CmdResearchNarration",
     "CmdResearchExportText",

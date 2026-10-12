@@ -306,11 +306,14 @@ struct MainWindow { // NOLINT(clang-analyzer-optin.performance.Padding)
     HBox* aiChatHeader = nullptr;
     VirtRoot* aiChatRoot = nullptr;
     DropDown* aiChatSessionCombo = nullptr;
+    DropDown* aiChatProviderCombo = nullptr;
+    VirtButton* aiChatSetupBtn = nullptr;
     DropDown* aiChatModelCombo = nullptr;
     DropDown* aiChatOptionCombo = nullptr; // effort / sandbox
     Checkbox* aiChatCheckbox = nullptr;    // skip permissions / always approve / skip sandbox
     VirtButton* aiChatStopBtn = nullptr;
     VirtButton* aiChatClearBtn = nullptr;
+    VirtButton* aiChatSendBtn = nullptr;
     Edit* aiChatInput = nullptr;
     WebviewWnd* aiChatWebView = nullptr;
     bool aiChatWebViewReady = false;
@@ -325,6 +328,8 @@ struct MainWindow { // NOLINT(clang-analyzer-optin.performance.Padding)
 
     // width of the AI chat sidebar
     int aiChatDx = 0;
+    ILayout* researchPane = nullptr;
+    ILayout* researchTabs = nullptr;
 
     // vertical splitter for resizing left side panel
     // the splitters are virtual controls living in the frame's own tree

@@ -14,6 +14,28 @@
 
 import { dlopen, FFIType, JSCallback, ptr, toArrayBuffer } from "bun:ffi";
 
+const versionApi = dlopen("version.dll", {
+  GetFileVersionInfoSizeW: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.u32 },
+  GetFileVersionInfoW: { args: [FFIType.ptr, FFIType.u32, FFIType.u32, FFIType.ptr], returns: FFIType.bool },
+  VerQueryValueW: { args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr], returns: FFIType.bool },
+});
+
+export function getProductVersion(path: string): string {
+  const name = wideZ(path);
+  const size = versionApi.symbols.GetFileVersionInfoSizeW(ptr(name), null);
+  if (!size) throw new Error(`No version resource: ${path}`);
+  const data = new Uint8Array(size);
+  if (!versionApi.symbols.GetFileVersionInfoW(ptr(name), 0, size, ptr(data))) throw new Error("Cannot read version");
+  const address = new BigUint64Array(1),
+    length = new Uint32Array(1);
+  if (!versionApi.symbols.VerQueryValueW(ptr(data), ptr(wideZ("\\")), ptr(address), ptr(length)))
+    throw new Error("No fixed version");
+  const info = new Uint32Array(toArrayBuffer(Number(address[0]), 0, length[0]));
+  const parts = [info[4]! >>> 16, info[4]! & 0xffff, info[5]! >>> 16, info[5]! & 0xffff];
+  if (parts[3] === 0) parts.pop();
+  return parts.join(".");
+}
+
 const user32 = dlopen("user32.dll", {
   CreateDesktopW: {
     args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.u32, FFIType.u32, FFIType.ptr],

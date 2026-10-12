@@ -103,7 +103,7 @@ bool WriteUninstallerRegistryInfo(HKEY hkey, bool allUsers, Str installDir) {
     TempStr regPathUninst = GetRegPathUninstTemp(StrL(kAppName));
     // path to installed executable (or "$path,0" to force the first icon)
     ok &= LoggedWriteRegStr(hkey, regPathUninst, StrL("DisplayIcon"), installedExePath);
-    ok &= LoggedWriteRegStr(hkey, regPathUninst, StrL("DisplayName"), StrL(kAppName));
+    ok &= LoggedWriteRegStr(hkey, regPathUninst, StrL("DisplayName"), StrL(kAppDisplayName));
     // version format: "1.2"
     ok &= LoggedWriteRegStr(hkey, regPathUninst, StrL("DisplayVersion"), StrL(CURR_VERSION_STRA));
     // non-recursive because we don't want to count space used for thumbnails

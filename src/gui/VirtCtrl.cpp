@@ -26,6 +26,7 @@ VirtButton* NewThemedButton(HWND hwndForDpi, Str text, PlatformFont* font, bool 
     auto* b = new VirtButton(text, font);
     b->SetIsDefault(isDefault);
     b->textPadding = DpiScaledInsets(5, 12);
+    b->cornerRadius = 6;
     return b;
 }
 
@@ -2731,9 +2732,13 @@ Color VirtButton::TextColor(Color bg) const {
 void VirtButton::Paint(VirtPaintCtx& ctx) {
     bool isEnabled = HasFlag(vwfEnabled);
     Color bg = GetColor((isEnabled && HasFlag(vwfHovered)) ? kColBtnBgHover : kColBtnBg);
-    ctx.gfx->FillRect(ctx.bounds, bg);
     Color borderCol = GetColor(kColBtnBorder);
-    if (!ColorSkipsPaint(borderCol)) {
+    if (cornerRadius) {
+        ctx.gfx->FillRoundedRect(ctx.bounds, DpiScale(cornerRadius), bg, borderCol);
+    } else {
+        ctx.gfx->FillRect(ctx.bounds, bg);
+    }
+    if (!cornerRadius && !ColorSkipsPaint(borderCol)) {
         Rect b = ctx.bounds;
         ctx.gfx->FillRect({b.x, b.y, b.dx, 1}, borderCol);
         ctx.gfx->FillRect({b.x, b.Bottom() - 1, b.dx, 1}, borderCol);

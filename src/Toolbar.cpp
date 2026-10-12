@@ -63,6 +63,14 @@ constexpr int kButtonSpacingX = 4;
 
 // distance between label and edit field
 constexpr int kTextPaddingRight = 6;
+constexpr int kFloatingToolsWidth = 720;
+constexpr int kFloatingButtonHeight = 56;
+constexpr int kFloatingLauncherSize = 88;
+constexpr int kFloatingIconSize = 24;
+constexpr float kFloatingFontPt = 12;
+constexpr int kFloatingRailWidth = 144;
+constexpr int kFloatingRailHeight = 48;
+constexpr int kFloatingGap = 8;
 
 enum class ToolbarSection {
     File,
@@ -100,6 +108,7 @@ static ToolbarSection ToolbarSectionFor(int cmd) {
         case CmdZoomIn:
             return ToolbarSection::View;
         case CmdAIChatWithClaudeCode:
+        case CmdPaperChat:
         case CmdClearAIChat:
         case CmdResearchAsk:
         case CmdPaperMap:
@@ -178,7 +187,7 @@ static ToolbarButtonInfo gToolbarButtons[] = {
     {gIconRotateRight, CmdRotateRight, TrN("Rotate &Right")},
     {gIconZoomOut, CmdZoomOut, TrN("Zoom Out")},
     {gIconZoomIn, CmdZoomIn, TrN("Zoom In")},
-    {gIconPaperChat, CmdAIChatWithClaudeCode, StrL("Chat with this paper")},
+    {gIconPaperChat, CmdPaperChat, StrL("Chat with this paper")},
     {nullptr, CmdPaperMap, StrL("KG"), {}, true},
     {gIconTrash, CmdClearAIChat, StrL("Clear chat for this paper")},
     {gIconSourceAnswer, CmdResearchAsk, StrL("Answer with clickable PDF sources")},
@@ -341,6 +350,12 @@ VirtCtrl* ToolbarItemFromPoint(MainWindow* win, Point pt) {
         if (!w || w->GetVisibility() != Visibility::Visible) {
             continue;
         }
+        if (gSettings->researchFloatingTools &&
+            (!tb->floatingExpanded ||
+             ToolbarSectionFor(w->id == CmdGoToPage ? PageInfoId : w->id) !=
+                 (tb->floatingSectionId == AiToolsId ? ToolbarSection::AI
+                                                     : (ToolbarSection)(tb->floatingSectionId - FloatingGroupId))))
+            continue;
         if (w->BoundsInWindow().Contains(pt)) {
             return w;
         }
@@ -806,10 +821,9 @@ void ToolbarUpdateStateForWindow(MainWindow* win, bool setButtonsVisibility) {
             ToolbarItemAt(win, i)->SetTooltip(dark ? StrL("Dark reading on - click for light")
                                                    : StrL("Dark reading off - click for dark"));
         }
-        if (cmdId == CmdAIChatWithClaudeCode) {
-            SetToolbarButtonCheckedState(
-                win, cmdId,
-                !PaperMapHwnd(win) && win->uiState.aiChatVisible && win->aiChatProvider == (int)AIChatBackend::Claude);
+        if (cmdId == CmdPaperChat) {
+            SetToolbarButtonCheckedState(win, cmdId,
+                                         !PaperMapHwnd(win) && !ResearchBrowserHwnd(win) && win->uiState.aiChatVisible);
         }
         if (cmdId == CmdPaperMap) {
             bool open = PaperMapHwnd(win) != nullptr;
@@ -1003,6 +1017,7 @@ bool ShouldShowToolbar(MainWindow* win) {
     if (win->presentation || win->isQuickLook) {
         return false;
     }
+    if (gSettings->researchFloatingTools) return false;
     int mode = ToolbarModeForWindow(win);
     return mode == kToolbarShow;
 }
@@ -1011,6 +1026,7 @@ bool ShouldOverlayToolbar(MainWindow* win) {
     if (win->presentation || win->isQuickLook) {
         return false;
     }
+    if (gSettings->researchFloatingTools) return ToolbarModeForWindow(win) != kToolbarHide;
     if (ToolbarModeForWindow(win) != kToolbarOverlay) {
         return false;
     }
@@ -1054,6 +1070,18 @@ static int OverlayToolbarBottomScrollbarOffset() {
 // rectangle (frame-client coords) the overlay toolbar occupies when shown
 static Rect OverlayToolbarRect(MainWindow* win) {
     Rect canvas = ToolbarCanvasRectInFrame(win);
+    ToolbarVirt* tb = win->toolbarVirt;
+    if (gSettings->researchFloatingTools) {
+        int margin = DpiScale(12);
+        Size size = tb->host->layout->Layout(Loose({std::min(canvas.dx, DpiScale(kFloatingToolsWidth)), canvas.dy}));
+        int x = gSettings->researchToolsX < 0 ? canvas.Right() - size.dx - margin
+                                              : canvas.x + DpiScale(gSettings->researchToolsX);
+        int y = gSettings->researchToolsY < 0 ? canvas.Bottom() - size.dy - margin
+                                              : canvas.y + DpiScale(gSettings->researchToolsY);
+        x = limitValue(x, canvas.x, std::max(canvas.x, canvas.Right() - size.dx));
+        y = limitValue(y, canvas.y, std::max(canvas.y, canvas.Bottom() - size.dy));
+        return {x, y, size.dx, size.dy};
+    }
     if (win->toolbarVirt->vertical) {
         Size s = ToolbarHost(win)->ScreenRect().Size();
         return {canvas.x + canvas.dx - s.dx, canvas.y, s.dx, std::min(s.dy, canvas.dy)};
@@ -1079,6 +1107,13 @@ void PositionOverlayToolbar(MainWindow* win) {
     }
     Rect r = OverlayToolbarRect(win);
     host->SetPos(r, win->toolbarOverlayShown);
+    if (gSettings->researchFloatingTools) {
+        host->Relayout();
+        int radius = DpiScale(12);
+        HRGN region = win->toolbarVirt->floatingExpanded ? CreateRoundRectRgn(0, 0, r.dx + 1, r.dy + 1, radius, radius)
+                                                         : CreateEllipticRgn(0, 0, r.dx + 1, r.dy + 1);
+        if (!SetWindowRgn(win->hwndToolbar, region, TRUE)) DeleteObject(region);
+    }
     if (!win->toolbarOverlayShown) {
         ToolbarRepaintUncovered(win, r);
     }
@@ -1119,6 +1154,7 @@ static void CancelOverlayHide(MainWindow* win) {
 }
 
 static void ScheduleOverlayHide(MainWindow* win) {
+    if (gSettings->researchFloatingTools) return;
     if (win->toolbarOverlayHidePending) {
         return; // already scheduled; don't keep pushing it out on every move
     }
@@ -1137,6 +1173,11 @@ static void SetOverlayShown(MainWindow* win, bool shown) {
 // re-evaluate overlay toolbar visibility based on the cursor's screen position
 void UpdateOverlayToolbarForMouse(MainWindow* win) {
     if (!win->isToolbarOverlay || !ToolbarHost(win)) {
+        return;
+    }
+    if (gSettings->researchFloatingTools) {
+        CancelOverlayHide(win);
+        SetOverlayShown(win, true);
         return;
     }
     bool show = OverlayToolbarShouldShowForCursor(win) || OverlayToolbarHasFocus(win);
@@ -1524,6 +1565,9 @@ static VirtCtrl* ToolbarItemForCmd(MainWindow* win, int cmdId) {
     if (!tb) {
         return nullptr;
     }
+    if (cmdId == AiToolsId) return gSettings->researchFloatingTools ? tb->floatingAi : tb->aiHeader;
+    for (auto* button : tb->floatingGroups)
+        if (button->id == cmdId) return button;
     for (VirtCtrl* w : tb->items) {
         if (w && w->id == cmdId && w->GetVisibility() == Visibility::Visible) {
             return w;
@@ -1541,6 +1585,10 @@ static Rect ToolbarButtonRect(MainWindow* win, int cmdId) {
     ToolbarVirt* tb = win ? win->toolbarVirt : nullptr;
     if (!tb) {
         return {};
+    }
+    if (cmdId == AiToolsId || (cmdId >= FloatingGroupId && cmdId < FloatingGroupId + (int)ToolbarSection::Tools)) {
+        VirtCtrl* header = ToolbarItemForCmd(win, cmdId);
+        return header ? header->BoundsInWindow() : Rect{};
     }
     for (VirtCtrl* w : tb->items) {
         if (w && w->id == cmdId && w->GetVisibility() == Visibility::Visible) {
@@ -1627,6 +1675,27 @@ TempStr ToolbarButtonsResultTemp(int* exitCodeOut) {
         if (IsCollapsed(group.layout)) continue;
         Rect r = group.layout->lastBounds;
         out.Append(fmt("group=%s rect=%d,%d,%d,%d\n", group.name, r.x, r.y, r.Right(), r.Bottom()));
+    }
+    if (auto* ai = ToolbarItemForCmd(win, AiToolsId)) {
+        Rect r = ai->BoundsInWindow();
+        out.Append(fmt("ai-header rect=%d,%d,%d,%d\n", r.x, r.y, r.Right(), r.Bottom()));
+    }
+    Size reserved = ToolbarReservedSpace(win);
+    out.Append(fmt("floating=%d expanded=%d reserved=%d,%d\n", gSettings->researchFloatingTools, tb->floatingExpanded,
+                   reserved.dx, reserved.dy));
+    if (tb->floatingScroll)
+        out.Append(fmt("floating-scroll y=%d max=%d\n", tb->floatingScroll->scrollY, tb->floatingScroll->MaxScrollY()));
+    for (auto item : {tb->floatingGrip, tb->floatingToggle}) {
+        if (!item) continue;
+        Rect r = item->BoundsInWindow();
+        out.Append(fmt("%s rect=%d,%d,%d,%d\n", item == tb->floatingGrip ? StrL("float-grip") : StrL("float-toggle"),
+                       r.x, r.y, r.Right(), r.Bottom()));
+    }
+    for (auto* button : tb->floatingGroups) {
+        Rect r = button->BoundsInWindow();
+        out.Append(fmt("float-group=%s rect=%d,%d,%d,%d\n",
+                       ToolbarSectionName((ToolbarSection)(button->id - FloatingGroupId)), r.x, r.y, r.Right(),
+                       r.Bottom()));
     }
     int nAnnotations = len(tb->annotationItems);
     bool annotationsVisible = tb->annotationRow && tb->annotationRow->GetVisibility() == Visibility::Visible;
@@ -1788,6 +1857,34 @@ struct ToolbarHoverRow : VirtCtrl {
     void OnMouseLeave() { Invalidate(); }
 };
 
+static void CollectFloatingCtrls(ILayout* layout, Vec<VirtCtrl*>& out) {
+    if (!layout || IsCollapsed(layout)) return;
+    if (auto* ctrl = layout->AsVirtCtrl()) {
+        VecAppend(out, ctrl);
+        return;
+    }
+    for (int i = 0; i < layout->LayoutChildCount(); i++) CollectFloatingCtrls(layout->LayoutChildAt(i), out);
+}
+
+// Bind layout controls to the viewport so focus and wheel events reach it.
+struct FloatingScroll : ScrollBox {
+    explicit FloatingScroll(ILayout* content) : ScrollBox(content) {
+        Vec<VirtCtrl*> controls;
+        CollectVirtCtrls(content, controls);
+        for (auto* ctrl : controls) AddChild(ctrl);
+        syncScrollbar = false;
+        lineDy = DpiScale(kFloatingButtonHeight);
+    }
+    ~FloatingScroll() override { RemoveAllChildren(false); }
+    void Paint(VirtPaintCtx&) override {}
+    void PaintChildren(VirtPaintCtx& ctx) override {
+        Vec<VirtCtrl*> controls;
+        CollectFloatingCtrls(child, controls);
+        Rect clip = ctx.clip.Intersect(ctx.bounds);
+        for (auto* ctrl : controls) ctrl->PaintTree(ctx.gfx, ChildOriginInWindow(), clip);
+    }
+};
+
 // A cell of NewToolbarHoverStrip(): a label in a row of them, no icon. The one
 // in use is boxed rather than ticked; a tick per cell would double the width of
 // a strip whose whole point is to be compact.
@@ -1856,7 +1953,7 @@ ILayout* NewToolbarHoverMenu(MainWindow* win, const Vec<ToolbarHoverMenuItem>& i
     if (!tb) {
         return nullptr;
     }
-    int iconSize = tb->iconSize;
+    int iconSize = gSettings->researchFloatingTools ? DpiScale(kFloatingIconSize) : tb->iconSize;
     Color fg = TbTextColor();
     Color dis = TbDisabledColor();
     Color bg = TbBgColor();
@@ -1865,7 +1962,9 @@ ILayout* NewToolbarHoverMenu(MainWindow* win, const Vec<ToolbarHoverMenuItem>& i
     for (const ToolbarHoverMenuItem& it : items) {
         auto* row = new ToolbarHoverRow();
         row->id = it.cmdId;
-        row->font = tb->platformFont;
+        row->font = gSettings->researchFloatingTools
+                        ? GetPlatformFont(StrL("Segoe UI"), kFloatingFontPt, PlatformFontStyle::Regular)
+                        : tb->platformFont;
         row->iconSize = iconSize;
         str::ReplaceWithCopy(&row->text, it.text);
         str::ReplaceWithCopy(&row->shortcut, ShortcutsForCmdTemp(it.cmdId, 1));
@@ -1878,7 +1977,9 @@ ILayout* NewToolbarHoverMenu(MainWindow* win, const Vec<ToolbarHoverMenuItem>& i
         RecordHoverItem(tb, row, row->text, it);
     }
     int b = DpiScale(kHoverMenuBorder);
-    return new Padding(vbox, Insets{b, b, b, b});
+    auto* padded = new Padding(vbox, Insets{b, b, b, b});
+    if (!gSettings->researchFloatingTools) return padded;
+    return new FloatingScroll(padded);
 }
 
 // The widest row of the pyramid: the smallest w with 1+2+...+w >= n, so the
@@ -2224,7 +2325,14 @@ static void OpenHoverDropdown(MainWindow* win, int cmdId) {
     host->onPaintBackground = MkFunc1(PaintHoverDropdownBg, win);
     host->onMouseMove = MkFunc0(OnHoverDropdownMouseMove, win);
     host->onMouseLeave = MkFunc0(OnHoverDropdownMouseLeave, win);
-    Size sz = host->SetLayoutSizedToContent(ev.layout);
+    Size sz;
+    if (gSettings->researchFloatingTools) {
+        host->SetLayout(ev.layout);
+        Rect area = GetWorkAreaRect(anchor, win->hwndFrame);
+        sz = ev.layout->Layout(Loose({area.dx - DpiScale(24), area.dy - DpiScale(48)}));
+    } else {
+        sz = host->SetLayoutSizedToContent(ev.layout);
+    }
 
     // under the button, left edges aligned, kept on the monitor. A build that
     // asked for it instead hangs off the middle of the button, so it opens
@@ -2235,6 +2343,19 @@ static void OpenHoverDropdown(MainWindow* win, int cmdId) {
     }
     Rect r{x, anchor.Bottom(), sz.dx, sz.dy};
     if (tb->vertical) r = {anchor.x - sz.dx, anchor.y, sz.dx, sz.dy};
+    if (gSettings->researchFloatingTools) {
+        Rect owner = tb->host->ScreenRect();
+        Rect area = GetWorkAreaRect(owner, win->hwndFrame);
+        int gap = DpiScale(12);
+        int left = owner.x - sz.dx - gap;
+        int right = owner.Right() + gap;
+        if (left >= area.x)
+            r = {left, owner.y, sz.dx, sz.dy};
+        else if (right + sz.dx <= area.Right())
+            r = {right, owner.y, sz.dx, sz.dy};
+        else if (anchor.y - sz.dy >= area.y)
+            r = {x, anchor.y - sz.dy - gap, sz.dx, sz.dy};
+    }
     r = ShiftRectToWorkArea(r, win->hwndFrame, true);
 
     // Live before the show. SetWindowPos can deliver a mouse move; gInOpenHover
@@ -2297,6 +2418,35 @@ static bool ShowToolbarButtonDropdown(MainWindow* win, int cmdId) {
     OpenHoverDropdown(win, cmdId);
     tb->hoverSticky = true;
     return true;
+}
+
+static void OnAiToolsClick(MainWindow* win, VirtMouseEvent* ev) {
+    ev->didHandle = true;
+    if (gSettings->researchFloatingTools) {
+        win->toolbarVirt->floatingSectionId = AiToolsId;
+        HideToolbarHoverDropdown(win);
+        PositionOverlayToolbar(win);
+        return;
+    }
+    if (win->toolbarVirt->hoverCmdId == AiToolsId)
+        HideToolbarHoverDropdown(win);
+    else
+        ShowToolbarButtonDropdown(win, AiToolsId);
+}
+
+static void OnFloatingGroupClick(MainWindow* win, VirtMouseEvent* ev) {
+    ev->didHandle = true;
+    int id = ev->target->id;
+    if (gSettings->researchFloatingTools) {
+        win->toolbarVirt->floatingSectionId = id;
+        HideToolbarHoverDropdown(win);
+        PositionOverlayToolbar(win);
+        return;
+    }
+    if (win->toolbarVirt->hoverCmdId == id)
+        HideToolbarHoverDropdown(win);
+    else
+        ShowToolbarButtonDropdown(win, id);
 }
 
 // The mouse moved over the toolbar (or left it): open, keep or close the
@@ -3471,7 +3621,152 @@ static void PaintToolbarSeparator(VirtCustom*, VirtPaintCtx* ctx) {
 }
 
 static Kind kToolbarSeparator = "toolbarSeparator";
+static void BuildAiTools(MainWindow* win, ToolbarHoverBuildEvent* ev) {
+    Vec<ToolbarHoverMenuItem> items;
+    bool supported = IsAIChatSupportedForTab(win->CurrentTab());
+    for (auto it :
+         {ToolbarHoverMenuItem{Str(gIconPaperChat), StrL("Chat — Claude Code"), CmdAIChatWithClaudeCode, supported},
+          ToolbarHoverMenuItem{Str(gIconPaperChat), StrL("Chat — OpenAI (ChatGPT / Codex)"), CmdAIChatWithOpenAICodex,
+                               supported},
+          ToolbarHoverMenuItem{Str(gIconPaperChat), StrL("Chat — Grok"), CmdAIChatWithGrokBuild, supported},
+          ToolbarHoverMenuItem{Str(gIconPaperChat), StrL("Chat — Gemini / Antigravity"), CmdAIChatWithAntiGravity,
+                               supported}})
+        VecAppend(items, it);
+    for (int i = 0; i < TotalButtonsCount(); i++) {
+        const auto& item = GetToolbarButtonInfoByIdx(i);
+        if (ToolbarSectionFor(item.cmdId) != ToolbarSection::AI) continue;
+        VecAppend(items,
+                  ToolbarHoverMenuItem{item.icon ? Str(item.icon) : item.svgIcon, item.toolTip, item.cmdId, supported});
+    }
+    ev->layout = NewToolbarHoverMenu(win, items);
+}
+
 static Kind kToolbarGroup = "toolbarGroup";
+
+enum class FloatingShape {
+    Card,
+    Tab,
+    Circle
+};
+
+struct FloatingButton : VirtButton {
+    FloatingShape shape;
+    Str svg;
+    Str glyph;
+    FloatingButton(Str label, Str icon, FloatingShape style)
+        : VirtButton(label, GetPlatformFont(StrL("Segoe UI"), kFloatingFontPt, PlatformFontStyle::Regular)),
+          shape(style),
+          svg(str::Dup(icon)) {
+        if (shape == FloatingShape::Circle) font = GetPlatformFont(StrL("Segoe UI"), 16, PlatformFontStyle::Bold);
+    }
+    ~FloatingButton() override { str::Free(svg); }
+    Size GetIdealSize() override {
+        if (shape == FloatingShape::Circle) return {DpiScale(kFloatingLauncherSize), DpiScale(kFloatingLauncherSize)};
+        Size text = PlatformFontMeasureText(font, s);
+        return {text.dx + DpiScale(svg ? kFloatingIconSize + 44 : 32), DpiScale(kFloatingButtonHeight)};
+    }
+    void Paint(VirtPaintCtx& ctx) override {
+        Rect r = ctx.bounds;
+        r.SubTB(2, DpiScale(5));
+        r.SubLR(2, DpiScale(5));
+        Rect shadow = r;
+        shadow.x += DpiScale(3);
+        shadow.y += DpiScale(4);
+        if (shape == FloatingShape::Circle) {
+            ctx.gfx->FillEllipse(shadow, 0x152b49, 65);
+            ctx.gfx->FillEllipse(r, MkRgb(HasFlag(vwfHovered) ? 25 : 38, 105, 220));
+            Rect shine = r;
+            shine.SubLR(DpiScale(10), DpiScale(10));
+            shine.dy /= 2;
+            ctx.gfx->FillEllipse(shine, 0xffffff, 35);
+            ctx.gfx->DrawText(s, r, gfxTextCenter | gfxTextVCenter, font, 0xffffff);
+        } else {
+            int radius = DpiScale(8);
+            bool selected = IsDefault();
+            Color bg = HasFlag(vwfHovered) || selected ? TbHoverColor() : TbBgColor();
+            ctx.gfx->FillRoundedRect(r, radius, bg, shape == FloatingShape::Tab ? kColorTransparent : TbEdgeColor());
+            Color fg = IsEnabled() ? (selected ? ThemeWindowLinkColor() : TextColor(bg)) : TbDisabledColor();
+            if (selected && shape == FloatingShape::Tab)
+                ctx.gfx->FillRoundedRect({r.x, r.y + DpiScale(10), DpiScale(3), r.dy - DpiScale(20)}, DpiScale(2), fg);
+            int x = r.x + DpiScale(16);
+            if (svg || glyph) {
+                int size = DpiScale(kFloatingIconSize);
+                Rect iconRect = {x, r.y + (r.dy - size) / 2, size, size};
+                if (svg) {
+                    auto* icon = GetCachedPixmapForSvg(svg, size, size, fg, bg);
+                    ctx.gfx->DrawPixmap(icon, iconRect);
+                } else {
+                    ctx.gfx->DrawText(glyph, iconRect, gfxTextCenter | gfxTextVCenter, GetBoldPlatformFont(font), fg);
+                }
+                x += size + DpiScale(12);
+            }
+            ctx.gfx->DrawText(s, {x, r.y, r.Right() - x - DpiScale(12), r.dy}, gfxTextVCenter | gfxTextEllipsis, font,
+                              fg);
+        }
+        if (HasFlag(vwfFocused)) ctx.gfx->DrawFocusRect(r);
+    }
+};
+
+static Str FloatingActionLabel(int cmd, Str fallback) {
+    switch (cmd) {
+        case CmdGoToPage:
+            return StrL("Go to page");
+        case CmdRotateLeft:
+            return StrL("Rotate left");
+        case CmdRotateRight:
+            return StrL("Rotate right");
+        case CmdToggleReadingDarkMode:
+            return StrL("Dark reading");
+        case CmdDecreaseTextSize:
+            return StrL("Smaller text");
+        case CmdIncreaseTextSize:
+            return StrL("Larger text");
+        case CmdZoomFitWidthAndContinuous:
+            return StrL("Fit width");
+        case CmdZoomFitPageAndSinglePage:
+            return StrL("Single page");
+        case CmdPaperChat:
+            return StrL("Chat with paper");
+        case CmdPaperMap:
+            return StrL("Knowledge map");
+        case CmdClearAIChat:
+            return StrL("Clear chat");
+        case CmdResearchAsk:
+            return StrL("Ask with sources");
+        case CmdResearchSelection:
+            return StrL("Explain selection");
+        case CmdResearchSymbols:
+            return StrL("Symbol index");
+        case CmdResearchCompare:
+            return StrL("Compare papers");
+        case CmdResearchVersions:
+            return StrL("Compare versions");
+        case CmdResearchFigure:
+            return StrL("Explain figure");
+        case CmdResearchReading:
+            return StrL("Reading mode");
+        case CmdResearchNarration:
+            return StrL("Vietnamese narration");
+        case CmdResearchExportMp3:
+            return StrL("Export MP3");
+        case CmdResearchTools:
+            return StrL("Research setup");
+        case CmdResearchExportText:
+            return StrL("Export paper text");
+        case CmdArxivSearch:
+            return StrL("Search arXiv");
+        case CmdCollectPapers:
+            return StrL("Collect references");
+        case CmdSciHub:
+            return StrL("Find PDF");
+        case CmdGoogleDrive:
+            return StrL("Google Drive");
+        case CmdSendToZalo:
+            return StrL("Zalo");
+        default:
+            return fallback;
+    }
+}
 
 enum class ToolbarAxis {
     Adaptive,
@@ -3506,6 +3801,23 @@ struct ToolbarFlow : ILayout {
     ILayout* LayoutChildAt(int i) override { return children[i]; }
     Size Layout(Constraints bc) override {
         VecResize(positions, len(children));
+        if (gSettings->researchFloatingTools && bc.max.dx != Inf && len(children) &&
+            !IsLayoutOfKind(children[0], kToolbarGroup)) {
+            int gap = DpiScale(kFloatingGap);
+            int columns = bc.max.dx >= DpiScale(410) ? 2 : 1;
+            int cellDx = (bc.max.dx - (columns - 1) * gap) / columns;
+            int cellDy = DpiScale(kFloatingButtonHeight);
+            int count = 0;
+            for (int i = 0; i < len(children); i++) {
+                positions[i] = {};
+                if (IsCollapsed(children[i])) continue;
+                children[i]->Layout(Tight({cellDx, cellDy}));
+                positions[i] = {(count % columns) * (cellDx + gap), (count / columns) * (cellDy + gap), cellDx, cellDy};
+                count++;
+            }
+            int rows = (count + columns - 1) / columns;
+            return {bc.max.dx, rows ? rows * (cellDy + gap) - gap : 0};
+        }
         int x = 0, y = 0, columnWidth = 0, height = 0, rowHeight = 0, width = 0;
         int columnStart = 0;
         int rowStart = 0;
@@ -3582,22 +3894,34 @@ struct ToolbarFlow : ILayout {
 struct ToolbarGroup : ILayout {
     ToolbarVirt* tb;
     ToolbarFlow* content;
-    VirtText* label;
+    VirtCtrl* label;
     Size contentSize, labelSize;
 
-    ToolbarGroup(ToolbarVirt* owner, Str name) : tb(owner) {
+    ToolbarGroup(ToolbarVirt* owner, Str name, MainWindow* win) : tb(owner) {
         kind = kToolbarGroup;
         content = new ToolbarFlow(tb, true, ToolbarAxis::Horizontal);
-        label = new VirtText(trans::GetTranslation(name), GetBoldPlatformFont(tb->platformFont));
-        label->isRtl = IsUIRtl();
-        label->SetColor(kColText, TbTextColor());
-        label->SetFlag(vwfNoHitTest, true);
+        if (str::Eq(name, StrL("AI"))) {
+            auto* button = NewThemedButton(win->hwndToolbar, StrL("AI"), GetBoldPlatformFont(tb->platformFont), false);
+            button->id = AiToolsId;
+            button->textPadding = Insets{};
+            button->SetTooltip(StrL("Open AI tools with full names"));
+            button->onClick = MkFunc1(OnAiToolsClick, win);
+            label = button;
+            tb->aiHeader = button;
+        } else {
+            auto* text = new VirtText(trans::GetTranslation(name), GetBoldPlatformFont(tb->platformFont));
+            text->isRtl = IsUIRtl();
+            text->SetColor(kColText, TbTextColor());
+            text->SetFlag(vwfNoHitTest, true);
+            label = text;
+        }
     }
     ~ToolbarGroup() override {
         delete content;
         delete label;
     }
     Visibility GetVisibility() override {
+        if (gSettings->researchFloatingTools && visibility == Visibility::Collapse) return Visibility::Collapse;
         for (auto* child : content->children) {
             if (!IsCollapsed(child)) return Visibility::Visible;
         }
@@ -3609,8 +3933,9 @@ struct ToolbarGroup : ILayout {
         bool compact = tb->compact && !tb->vertical;
         int pad = compact ? 0 : DpiScale(4);
         int width = tb->vertical ? std::min(bc.max.dx, DpiScale(112)) : bc.max.dx;
-        label->SetVisibility(compact ? Visibility::Collapse : Visibility::Visible);
-        labelSize = compact ? Size{} : label->Layout(ExpandInf());
+        bool hideLabel = gSettings->researchFloatingTools || (compact && label != tb->aiHeader);
+        label->SetVisibility(hideLabel ? Visibility::Collapse : Visibility::Visible);
+        labelSize = hideLabel ? Size{} : label->Layout(ExpandInf());
         int labelDx = !tb->vertical && labelSize.dx ? labelSize.dx + DpiScale(6) : 0;
         contentSize = content->Layout(Loose({std::max(1, width - 2 * pad - labelDx), Inf}));
         if (tb->vertical)
@@ -3669,9 +3994,102 @@ struct ToolbarLayout : ILayout {
     }
 };
 
+struct FloatingToolsLayout : ILayout {
+    MainWindow* win;
+    ToolbarVirt* tb;
+    ILayout* header;
+    ILayout* body;
+    Vec<VirtCtrl*> rail;
+    Size headerSize, bodySize;
+    int railDx = 0;
+    int railDy = 0;
+    FloatingToolsLayout(MainWindow* owner, ToolbarVirt* toolbar, ILayout* h, ILayout* b)
+        : win(owner), tb(toolbar), header(h), body(b) {
+        VecAppend(rail, tb->floatingAi);
+        for (auto* button : tb->floatingGroups) VecAppend(rail, button);
+    }
+    ~FloatingToolsLayout() override {
+        delete header;
+        delete body;
+        for (auto* button : rail) delete button;
+    }
+    int LayoutChildCount() override { return tb->floatingExpanded ? 3 + len(tb->floatingGroups) : 1; }
+    ILayout* LayoutChildAt(int i) override {
+        if (i == 0) return header;
+        if (i == 1) return body;
+        if (i == 2) return tb->floatingAi;
+        return tb->floatingGroups[i - 3];
+    }
+    Size Layout(Constraints bc) override {
+        int pad = DpiScale(4);
+        Constraints inner = bc.Inset(2 * pad, 2 * pad);
+        static_cast<HBox*>(header)->gap = tb->floatingExpanded ? DpiScale(12) : 0;
+        tb->floatingTitle->SetVisibility(tb->floatingExpanded ? Visibility::Visible : Visibility::Collapse);
+        for (auto* button : tb->floatingGroups) {
+            button->SetVisibility(tb->floatingExpanded ? Visibility::Visible : Visibility::Collapse);
+            if (!tb->floatingExpanded) button->SetBounds({});
+        }
+        tb->floatingAi->SetVisibility(tb->floatingExpanded ? Visibility::Visible : Visibility::Collapse);
+        if (!tb->floatingExpanded) tb->floatingAi->SetBounds({});
+        auto section = tb->floatingSectionId == AiToolsId ? ToolbarSection::AI
+                                                          : (ToolbarSection)(tb->floatingSectionId - FloatingGroupId);
+        static_cast<VirtButton*>(tb->floatingAi)->SetIsDefault(section == ToolbarSection::AI);
+        for (auto* button : tb->floatingGroups)
+            static_cast<VirtButton*>(button)->SetIsDefault(button->id == tb->floatingSectionId);
+        for (const auto& group : tb->groups)
+            group.layout->SetVisibility(str::Eq(group.name, ToolbarSectionName(section)) ? Visibility::Visible
+                                                                                         : Visibility::Collapse);
+        headerSize = header->Layout(ExpandInf());
+        body->SetVisibility(tb->floatingExpanded ? Visibility::Visible : Visibility::Collapse);
+        if (!tb->floatingExpanded) return bc.Constrain({headerSize.dx + 2 * pad, headerSize.dy + 2 * pad});
+        railDx = std::min(DpiScale(kFloatingRailWidth), inner.max.dx / 3);
+        int availableDy = std::max(1, inner.max.dy - headerSize.dy);
+        railDy = std::min(DpiScale(kFloatingRailHeight), availableDy / (1 + len(tb->floatingGroups)));
+        bodySize = body->Layout(Loose({std::max(1, inner.max.dx - railDx - DpiScale(kFloatingGap)), availableDy}));
+        int height = std::max(bodySize.dy, railDy * (1 + len(tb->floatingGroups)));
+        return bc.Constrain({inner.max.dx + 2 * pad, headerSize.dy + height + 2 * pad});
+    }
+    int MinIntrinsicWidth(int height) override { return Layout(Loose({DpiScale(kFloatingToolsWidth), height})).dx; }
+    int MinIntrinsicHeight(int width) override { return Layout(Loose({width, Inf})).dy; }
+    void SetBounds(Rect r) override {
+        ILayout::SetBounds(r);
+        int pad = DpiScale(4);
+        header->SetBounds({r.x + pad, r.y + pad, headerSize.dx, headerSize.dy});
+        if (tb->floatingExpanded) {
+            int y = r.y + pad + headerSize.dy;
+            tb->floatingAi->SetBounds({r.x + pad, y + 3 * railDy, railDx, railDy});
+            for (auto* button : tb->floatingGroups) {
+                int row = button->id - FloatingGroupId;
+                button->SetBounds({r.x + pad, y + row * railDy, railDx, railDy});
+            }
+            body->SetBounds({r.x + pad + railDx + DpiScale(kFloatingGap), y, bodySize.dx, bodySize.dy});
+        } else
+            body->lastBounds = {};
+        for (auto* edit : {win->pageEdit, win->chapterEdit}) {
+            if (edit)
+                ShowWindow(edit->hwnd,
+                           tb->floatingExpanded && edit->GetVisibility() == Visibility::Visible ? SW_SHOWNA : SW_HIDE);
+        }
+    }
+};
+
+static void ToggleFloatingTools(MainWindow* win, VirtMouseEvent* ev) {
+    ev->didHandle = true;
+    auto* tb = win->toolbarVirt;
+    tb->floatingExpanded = !tb->floatingExpanded;
+    HideToolbarHoverDropdown(win);
+    PositionOverlayToolbar(win);
+    tb->host->Invalidate(true);
+}
+
 Size UpdateToolbarPlacement(MainWindow* win, Size area, int panelsDx) {
     ToolbarVirt* tb = win->toolbarVirt;
     if (!tb || !tb->host || !tb->host->layout || area.dx <= 0 || area.dy <= 0) return {};
+    if (gSettings->researchFloatingTools) {
+        tb->vertical = false;
+        tb->compact = false;
+        return {};
+    }
     bool previous = tb->vertical;
     bool previousCompact = tb->compact;
     tb->vertical = false;
@@ -3722,6 +4140,13 @@ static void BuildToolbarLayout(MainWindow* win) {
     PopulateCustomToolbarButtons();
 
     ToolbarVirt* tb = win->toolbarVirt;
+    tb->aiHeader = nullptr;
+    tb->floatingAi = nullptr;
+    tb->floatingGrip = nullptr;
+    tb->floatingToggle = nullptr;
+    tb->floatingTitle = nullptr;
+    tb->floatingScroll = nullptr;
+    VecReset(tb->floatingGroups);
     VecReset(tb->items);
     VecReset(tb->annotationItems);
     VecReset(tb->groups);
@@ -3755,12 +4180,21 @@ static void BuildToolbarLayout(MainWindow* win) {
         if (!group || section != next) {
             section = next;
             Str name = ToolbarSectionName(section);
-            group = new ToolbarGroup(tb, name);
+            group = new ToolbarGroup(tb, name, win);
             box->AddChild(group);
             VecAppend(tb->groups, ToolbarGroupState{name, group});
         }
         VirtCtrl* w = nullptr;
         bool noTranslate = i >= gLayoutButtonsCount;
+        if (gSettings->researchFloatingTools && bi.cmdId == PageInfoId) {
+            auto* page = new FloatingButton(StrL("Go to page"), Str(gIconSearch), FloatingShape::Card);
+            page->id = CmdGoToPage;
+            page->SetTooltip(StrL("Go to a page number"));
+            page->onClick = MkFunc1(OnToolbarButtonClicked, win);
+            group->content->AddChild(page);
+            VecAppend(tb->items, page);
+            continue;
+        }
         if (bi.cmdId == PageInfoId) {
             auto* pageBox = new ToolbarFlow(tb, false);
             group->content->AddChild(pageBox);
@@ -3814,6 +4248,12 @@ static void BuildToolbarLayout(MainWindow* win) {
         }
         if (bi.cmdId == 0 || !HasToolbarButtonContent(bi)) {
             w = MakeToolbarSeparator(tb->rowDy, tb->vertical);
+        } else if (gSettings->researchFloatingTools) {
+            Str svg = bi.isText ? Str{} : bi.svgIcon ? bi.svgIcon : Str(bi.icon);
+            if (bi.cmdId == CmdPaperMap) svg = Str(gIconConnectedPapers);
+            auto* button = new FloatingButton(FloatingActionLabel(bi.cmdId, bi.toolTip), svg, FloatingShape::Card);
+            if (bi.cmdId == CmdSendToZalo) button->glyph = StrL("Z");
+            w = button;
         } else if (bi.isText) {
             auto* b = new VirtButton(noTranslate ? bi.toolTip : trans::GetTranslation(bi.toolTip), tb->platformFont);
             if (bi.cmdId == CmdAutoContentReading || bi.cmdId == CmdPaperMap) {
@@ -3869,6 +4309,7 @@ static void BuildToolbarLayout(MainWindow* win) {
     }
 
     SetToolbarHoverDropdown(win, CmdSaveAnnotations, MkFunc1(BuildSaveHoverMenu, win));
+    if (!gSettings->researchFloatingTools) SetToolbarHoverDropdown(win, AiToolsId, MkFunc1(BuildAiTools, win));
     // one strip for the two of them, so it doesn't jump when the mouse crosses
     // from one to the other
     SetToolbarHoverDropdown(win, CmdZoomIn, MkFunc1(BuildZoomHoverMenu, win), CmdZoomIn);
@@ -3881,16 +4322,67 @@ static void BuildToolbarLayout(MainWindow* win) {
     auto* root = new ToolbarLayout(tb, box, annotationBox);
     tb->annotationRow = annotationBox;
     tb->annotationRow->SetVisibility(Visibility::Collapse);
-    tb->host->SetLayout(root);
+    if (gSettings->researchFloatingTools) {
+        auto* header = new HBox();
+        header->alignCross = CrossAxisAlign::CrossCenter;
+        auto* toggle = new FloatingButton(StrL("Tools"), {}, FloatingShape::Circle);
+        toggle->SetTooltip(StrL("Click to open tools; hold and drag to move"));
+        toggle->cursor = CursorId::Move;
+        toggle->onClick = MkFunc1(ToggleFloatingTools, win);
+        header->AddChild(toggle);
+        tb->floatingToggle = toggle;
+        auto* title = new VirtText(StrL("Research tools"), GetAppBiggerFont());
+        title->SetFlag(vwfNoHitTest, true);
+        header->AddChild(title);
+        title->SetVisibility(Visibility::Collapse);
+        tb->floatingTitle = title;
+        auto* ai = new FloatingButton(StrL("AI"), Str(gIconPaperChat), FloatingShape::Tab);
+        ai->id = AiToolsId;
+        ai->onClick = MkFunc1(OnAiToolsClick, win);
+        ai->SetTooltip(StrL("Open AI tools with full names"));
+        tb->floatingAi = ai;
+        const char* icons[] = {gIconFileOpen,        gIconPageNext,    gIconReadingView,    gIconPaperChat,
+                               gIconConnectedPapers, gIconDriveUpload, gIconEditAnnotations};
+        for (int i = 0; i < (int)ToolbarSection::Tools; i++) {
+            auto floatingSection = (ToolbarSection)i;
+            if (floatingSection == ToolbarSection::AI) continue;
+            Str label = floatingSection == ToolbarSection::View ? StrL("Read") : ToolbarSectionName(floatingSection);
+            auto* button = new FloatingButton(label, Str(icons[i]), FloatingShape::Tab);
+            button->id = FloatingGroupId + i;
+            button->SetTooltip(fmt("Open %s tools", label));
+            button->onClick = MkFunc1(OnFloatingGroupClick, win);
+            VecAppend(tb->floatingGroups, button);
+        }
+        auto* scroll = new FloatingScroll(root);
+        tb->floatingScroll = scroll;
+        tb->host->SetLayout(new FloatingToolsLayout(win, tb, header, scroll));
+    } else {
+        tb->host->SetLayout(root);
+    }
 }
 
 static void PaintToolbarBackground(MainWindow* win, VirtHostPaintEvent* ev) {
     ev->gfx->FillRect(ev->clientRect, TbBgColor());
+    if (gSettings->researchFloatingTools) {
+        auto* tb = win->toolbarVirt;
+        if (tb->floatingExpanded) {
+            Rect r = ev->clientRect;
+            r.SubLR(1, 1);
+            r.SubTB(1, 1);
+            ev->gfx->FillRoundedRect(r, DpiScale(12), TbBgColor(), TbEdgeColor());
+            Rect rail = tb->floatingAi->bounds;
+            int x = rail.Right() + DpiScale(3);
+            ev->gfx->FillRect({x, rail.y - 3 * rail.dy, 1, rail.dy * 7}, TbEdgeColor());
+        }
+        return;
+    }
     if (win->toolbarVirt->compact && !win->toolbarVirt->vertical) return;
+    if (win->toolbarVirt->floatingScroll) ev->gfx->PushClip(win->toolbarVirt->floatingScroll->BoundsInWindow());
     for (const auto& group : win->toolbarVirt->groups) {
         if (IsCollapsed(group.layout)) continue;
         ev->gfx->FillRoundedRect(group.layout->lastBounds, DpiScale(5), TbBgColor(), TbEdgeColor());
     }
+    if (win->toolbarVirt->floatingScroll) ev->gfx->PopClip();
 }
 
 // the default theme separates the toolbar from the canvas with a hairline.
@@ -4209,6 +4701,58 @@ static bool OnCaptionDrag(MainWindow* win, VirtHostNativeMsg* ev) {
 }
 
 static void OnToolbarNativeMsg(MainWindow* win, VirtHostNativeMsg* ev) {
+    ToolbarVirt* tb = win->toolbarVirt;
+    if (gSettings->researchFloatingTools && tb && tb->floatingToggle) {
+        Point pt{GET_X_LPARAM(ev->lp), GET_Y_LPARAM(ev->lp)};
+        auto screen = HwndClientToScreen(win->hwndToolbar, pt);
+        if (ev->msg == WM_LBUTTONDOWN) {
+            auto* hit = tb->host->vroot ? ElementFromPoint(tb->host->vroot, pt, nullptr, vhfIncludeDisabled) : nullptr;
+            bool toggle = hit == tb->floatingToggle;
+            if (hit && hit != tb->floatingGrip && hit != tb->floatingScroll && !toggle) return;
+            tb->floatingGrab = screen;
+            tb->floatingStart = ToolbarScreenToFrame(win, tb->host->ScreenRect().TL());
+            tb->floatingDrag = FloatingDrag::Armed;
+            tb->floatingDragButton = toggle ? tb->floatingToggle : nullptr;
+            HideToolbarHoverDropdown(win);
+            SetCapture(win->hwndToolbar);
+            ev->didHandle = true;
+            return;
+        }
+        if (ev->msg == WM_MOUSEMOVE && tb->floatingDrag != FloatingDrag::Idle) {
+            if (!(ev->wp & MK_LBUTTON)) {
+                ev->didHandle = true;
+                return;
+            }
+            int dx = screen.x - tb->floatingGrab.x;
+            int dy = screen.y - tb->floatingGrab.y;
+            if (tb->floatingDrag == FloatingDrag::Armed && abs(dx) < GetSystemMetrics(SM_CXDRAG) &&
+                abs(dy) < GetSystemMetrics(SM_CYDRAG)) {
+                ev->didHandle = true;
+                return;
+            }
+            tb->floatingDrag = FloatingDrag::Moving;
+            Rect canvas = ToolbarCanvasRectInFrame(win);
+            gSettings->researchToolsX = MulDiv(tb->floatingStart.x + dx - canvas.x, 96, DpiGet());
+            gSettings->researchToolsY = MulDiv(tb->floatingStart.y + dy - canvas.y, 96, DpiGet());
+            PositionOverlayToolbar(win);
+            ev->didHandle = true;
+            return;
+        }
+        if ((ev->msg == WM_LBUTTONUP || ev->msg == WM_CAPTURECHANGED || ev->msg == WM_CANCELMODE) &&
+            tb->floatingDrag != FloatingDrag::Idle) {
+            bool moved = tb->floatingDrag == FloatingDrag::Moving;
+            auto* button = tb->floatingDragButton;
+            bool click = ev->msg == WM_LBUTTONUP && !moved && button && button->BoundsInWindow().Contains(pt);
+            tb->floatingDrag = FloatingDrag::Idle;
+            tb->floatingDragButton = nullptr;
+            if (GetCapture() == win->hwndToolbar) ReleaseCapture();
+            if (moved) ScheduleSaveSettings();
+            if (click) AsVirtButton(button)->Click();
+            ev->didHandle = true;
+            return;
+        }
+        if (ev->msg == WM_LBUTTONDOWN || ev->msg == WM_LBUTTONDBLCLK) return;
+    }
     switch (ev->msg) {
         case WM_COMMAND:
         case WM_CTLCOLOREDIT:

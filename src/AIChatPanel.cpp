@@ -118,6 +118,50 @@ static AIChatTabState* GetTabState(WindowTab* tab, int providerId) {
     return &tab->aiChat[providerId];
 }
 
+static const char* kChatBackends[] = {"claude", "grok", "codex", "antigravity"};
+
+bool AIChatCanFallback(Str error) {
+    for (Str marker : {StrL("hit your"), StrL("usage limit"), StrL("rate limit"), StrL("quota"), StrL("credit balance"),
+                       StrL("not logged in"), StrL("authentication"), StrL("unauthorized")})
+        if (str::ContainsI(error, marker)) return true;
+    return false;
+}
+
+static int PickChatBackend(int tried = 0) {
+    for (int id : {(int)AIChatBackend::Claude, (int)AIChatBackend::Codex, (int)AIChatBackend::Grok,
+                   (int)AIChatBackend::AntiGravity}) {
+        if (!(tried & (1 << id)) && GetAIChatProvider(id)->IsInstalled()) return id;
+    }
+    return -1;
+}
+
+static int PreferredChatBackend() {
+    for (int i = 0; i < kAIChatProviderCount; i++)
+        if (str::EqI(gSettings->aiChatDefaultBackend, Str(kChatBackends[i]))) return i;
+    int id = PickChatBackend();
+    return id >= 0 ? id : (int)AIChatBackend::Claude;
+}
+
+static void SyncProviderCombo(MainWindow* win) {
+    if (!win->aiChatProviderCombo) return;
+    StrVec items;
+    AIChatProvider* current = CurrentProvider(win);
+    items.Append(fmt("Auto — %s", current ? current->name : StrL("detect backends")));
+    for (int i = 0; i < kAIChatProviderCount; i++) {
+        auto* p = GetAIChatProvider(i);
+        items.Append(fmt("%s%s", p->name, p->IsInstalled() ? Str{} : StrL(" — not installed")));
+    }
+    win->aiChatProviderCombo->SetItems(items);
+    CbSetCurrentSelection(win->aiChatProviderCombo,
+                          str::EqI(gSettings->aiChatDefaultBackend, StrL("auto")) ? 0 : win->aiChatProvider + 1);
+}
+
+enum class ChatSend {
+    User,
+    Retry
+};
+static void SendAIChatMessage(MainWindow* win, ChatSend mode = ChatSend::User);
+
 static Str kAIChatPendingSessionId() {
     return StrL("pending");
 }
@@ -408,6 +452,7 @@ static void UpdateAIChatPanelForCurrentTab(MainWindow* win) {
     if (win->aiChatClearBtn) {
         win->aiChatClearBtn->SetIsEnabled(supported);
     }
+    if (win->aiChatSendBtn) win->aiChatSendBtn->SetIsEnabled(enableInput);
     if (win->aiChatStopBtn) {
         win->aiChatStopBtn->SetIsVisible(working);
         win->aiChatStopBtn->SetIsEnabled(working);
@@ -424,6 +469,7 @@ static void StopAIChat(MainWindow* win) {
     WindowTab* tab = win->CurrentTab();
     AIChatTabState* st = GetTabState(tab, win->aiChatProvider);
     if (p && st && st->process) {
+        st->retryable = false;
         AIChatLog(p->logger, StrL("stop"), st->sessionId ? st->sessionId : StrL("(no session)"));
         AIChatCloseProcess(&st->process, true);
         WebViewAddError(win, StrL("Stopped by user."));
@@ -438,6 +484,9 @@ void ClearAIChat(MainWindow* win) {
     ClearResearchAssistant(win);
     AIChatTabState* st = GetTabState(win->CurrentTab(), win->aiChatProvider);
     if (!st) return;
+    str::FreePtr(&st->question);
+    st->triedMask = 0;
+    st->retryable = false;
     st->requestId = 0;
     AIChatCloseProcess(&st->process, true);
     str::ReplaceWithCopy(&st->sessionId, Str{});
@@ -506,6 +555,28 @@ static void OnAIChatFinished(MainWindow* win, AIChatProvider* p, AIChatTabState*
         WebViewFlushBlock(win);
         SetAIChatWorking(win, false);
         PopulateSessionCombo(win);
+        WindowTab* tab = win->CurrentTab();
+        if (tab && st && st->retryable && gSettings->aiChatAutoFallback &&
+            str::EqI(gSettings->aiChatDefaultBackend, StrL("auto")) && st->question) {
+            int next = PickChatBackend(st->triedMask);
+            st->retryable = false;
+            if (next >= 0) {
+                Str question = str::Dup(st->question);
+                int triedMask = st->triedMask;
+                OnAIChatToggle(win, next);
+                auto* target = GetTabState(tab, next);
+                str::ReplaceWithCopy(&target->question, question);
+                target->triedMask = triedMask;
+                WebViewAddTool(win, fmt("Auto switched from %s to %s after a quota or login error.", p->name,
+                                        GetAIChatProvider(next)->name));
+                HwndSetText(win->aiChatInput->hwnd, question);
+                str::Free(question);
+                SendAIChatMessage(win, ChatSend::Retry);
+            } else {
+                WebViewAddError(win,
+                                StrL("No other installed AI backend is available. Select a provider or open Setup."));
+            }
+        }
     }
 }
 
@@ -554,6 +625,7 @@ static void ApplyAIChatUpdate(MainWindow* win, AIChatProvider* p, AIChatUpdateDa
             }
             break;
         case AIChatUpdateType::Error:
+            if (st) st->retryable |= AIChatCanFallback(data->text);
             if (isActiveTab) {
                 WebViewAddError(win, data->text);
             } else if (data->text) {
@@ -882,7 +954,7 @@ TempStr AIChatTestReplayResultTemp(Str userMsg, Str response, int* exitCode) {
 
 // --- Sending a message ---
 
-static void SendAIChatMessage(MainWindow* win) {
+static void SendAIChatMessage(MainWindow* win, ChatSend mode) {
     AIChatProvider* p = CurrentProvider(win);
     if (!p || !win->aiChatInput) {
         return;
@@ -907,6 +979,12 @@ static void SendAIChatMessage(MainWindow* win) {
 
     TempWStr inputW = HwndGetTextWTemp(hwndInput);
     TempStr input = ToUtf8Temp(inputW);
+    if (mode == ChatSend::User) {
+        str::ReplaceWithCopy(&st->question, input);
+        st->triedMask = 0;
+    }
+    st->triedMask |= 1 << win->aiChatProvider;
+    st->retryable = false;
     HwndSetText(hwndInput, StrL(""));
 
     WebViewAddUser(win, input);
@@ -1197,6 +1275,7 @@ static void SetPanelProvider(MainWindow* win, int providerId) {
         return;
     }
     win->aiChatProvider = providerId;
+    SyncProviderCombo(win);
     if (win->aiChatCheckbox) {
         HwndSetText(win->aiChatCheckbox->hwnd, p->checkboxLabel);
     }
@@ -1265,6 +1344,50 @@ void CreateAIChatPanel(MainWindow* win) {
     auto header = NewLabelWithClose(win->hwndAiChatBox, labelFont, MkFunc0(CloseAIChatPanelFromLabel, win));
     win->aiChatLabel = header.label;
     win->aiChatHeader = header.box;
+    win->aiChatHeader->LayoutChildAt(1)->SetVisibility(Visibility::Collapse);
+
+    {
+        DropDown::CreateArgs args;
+        args.parent = win->hwndAiChatBox;
+        args.font = font;
+        win->aiChatProviderCombo = new DropDown();
+        win->aiChatProviderCombo->Create(args);
+        win->aiChatProviderCombo->onSelectionChanged = MkFunc0(
+            +[](MainWindow* win) {
+                int selected = CbGetCurrentSelection(win->aiChatProviderCombo);
+                if (selected < 0) return;
+                if (selected == 0) {
+                    str::ReplaceWithCopy(&gSettings->aiChatDefaultBackend, StrL("auto"));
+                    int next = PreferredChatBackend();
+                    if (win->aiChatProvider != next) OnAIChatToggle(win, next);
+                } else {
+                    str::ReplaceWithCopy(&gSettings->aiChatDefaultBackend, Str(kChatBackends[selected - 1]));
+                    if (win->aiChatProvider != selected - 1) OnAIChatToggle(win, selected - 1);
+                }
+                SyncProviderCombo(win);
+                ScheduleSaveSettings();
+            },
+            win);
+        win->aiChatSetupBtn = NewThemedButton(win->hwndAiChatBox, StrL("Setup"), font, false);
+        win->aiChatSetupBtn->onClick = MkFunc0(
+            +[](MainWindow* win) {
+                auto* p = CurrentProvider(win);
+                if (!p) return;
+                if (p->backend == AIChatBackend::Claude) {
+                    AIChatConfigureClaude(win);
+                    SyncProviderCombo(win);
+                    return;
+                }
+                AIChatNotInstalledDialogArgs args;
+                args.windowTitle = p->TitleTemp();
+                args.mainInstruction =
+                    StrL("Select Auto to detect installed backends. Open the provider guide to install or sign in.");
+                args.docUri = p->docUri;
+                args.hwndParent = win->hwndFrame;
+                AIChatShowNotInstalledDialog(args);
+            },
+            win);
+    }
 
     // session combo
     {
@@ -1322,6 +1445,9 @@ void CreateAIChatPanel(MainWindow* win) {
 
     win->aiChatClearBtn = NewThemedButton(win->hwndAiChatBox, StrL("Clear chat"), font, false);
     win->aiChatClearBtn->onClick = MkFunc0(ClearAIChat, win);
+    win->aiChatSendBtn = NewThemedButton(win->hwndAiChatBox, StrL("Send"), font, true);
+    win->aiChatSendBtn->onClick = MkFunc0(+[](MainWindow* w) { SendAIChatMessage(w); }, win);
+    win->aiChatSendBtn->SetTooltip(StrL("Send question (Enter); Shift+Enter adds a line"));
 
     // input box
     {
@@ -1348,6 +1474,9 @@ void CreateAIChatPanel(MainWindow* win) {
         inputRow->alignCross = CrossAxisAlign::Stretch;
         inputRow->AddChild(win->aiChatInput, 1);
         inputRow->AddChild(win->aiChatStopBtn);
+        inputRow->AddChild(new Spacer(DpiScale(8), 0));
+        inputRow->AddChild(win->aiChatSendBtn);
+        inputRow->alignCross = CrossAxisAlign::CrossCenter;
 
         auto* optionsRow = new HBox();
         optionsRow->alignCross = CrossAxisAlign::CrossCenter;
@@ -1359,7 +1488,13 @@ void CreateAIChatPanel(MainWindow* win) {
 
         auto* vbox = new VBox();
         vbox->alignCross = CrossAxisAlign::Stretch;
+        vbox->gap = DpiScale(8);
         vbox->AddChild(win->aiChatHeader);
+        auto* providerRow = new HBox();
+        providerRow->alignCross = CrossAxisAlign::Stretch;
+        providerRow->AddChild(win->aiChatProviderCombo, 1);
+        providerRow->AddChild(win->aiChatSetupBtn);
+        vbox->AddChild(providerRow);
         auto* sessionRow = new HBox();
         sessionRow->alignCross = CrossAxisAlign::Stretch;
         sessionRow->AddChild(win->aiChatSessionCombo, 1);
@@ -1370,7 +1505,7 @@ void CreateAIChatPanel(MainWindow* win) {
         vbox->AddChild(inputRow);
         vbox->AddChild(new Spacer(0, 4));
         vbox->AddChild(optionsRow);
-        win->aiChatLayout = vbox;
+        win->aiChatLayout = new Padding(vbox, DpiScaledInsets(12, 12));
     }
 
     // initialize provider-specific parts (default: Claude)
@@ -1389,12 +1524,15 @@ void UpdateAIChatDpi(MainWindow* win, int dpi) {
     PlatformFont* labelFont = GetAppSidebarLabelFontForDpi(dpi);
     win->aiChatLabel->font = labelFont;
     win->aiChatSessionCombo->SetFont(font);
+    win->aiChatProviderCombo->SetFont(font);
+    win->aiChatSetupBtn->font = font;
     win->aiChatModelCombo->SetFont(font);
     win->aiChatOptionCombo->SetFont(font);
     win->aiChatCheckbox->SetFont(font);
     win->aiChatInput->SetFont(font);
     win->aiChatStopBtn->font = font;
     win->aiChatClearBtn->font = font;
+    win->aiChatSendBtn->font = font;
     int padY = DpiScaleByDpi(dpi, 5);
     int padX = DpiScaleByDpi(dpi, 12);
     win->aiChatStopBtn->textPadding = Insets{padY, padX, padY, padX};
@@ -1407,6 +1545,10 @@ void UpdateAIChatDpi(MainWindow* win, int dpi) {
 
 // close the panel for the current tab (label's close button)
 static void CloseAIChatPanelFromLabel(MainWindow* win) {
+    HidePaperChat(win);
+}
+
+void HidePaperChat(MainWindow* win) {
     WindowTab* tab = win->CurrentTab();
     if (!tab) {
         return;
@@ -1455,27 +1597,13 @@ void OnAIChatToggle(MainWindow* win, int providerId) {
     }
     if (!IsAIChatAvailable()) {
         logf("OnAIChatToggle: IsAIChatAvailable() returned false (HasWebView=false)\n");
+        MessageBoxW(win->hwndFrame, L"AI chat needs Microsoft Edge WebView2 Runtime.", L"AI chat",
+                    MB_OK | MB_ICONINFORMATION);
         return;
-    }
-    if (!p->IsInstalled()) {
-        logf("OnAIChatToggle: provider %s is not installed (exePath=%s)\n", p->name, p->FindExecutableTemp());
-        if (p->backend == AIChatBackend::Claude) {
-            if (!AIChatConfigureClaude(win)) {
-                return;
-            }
-        } else {
-            AIChatNotInstalledDialogArgs args;
-            args.windowTitle = p->TitleTemp();
-            args.mainInstruction = p->NotInstalledInstructionTemp();
-            args.docUri = p->docUri;
-            args.hwndParent = win->hwndFrame;
-            AIChatShowNotInstalledDialog(args);
-            return;
-        }
     }
     if (!win->hwndAiChatBox) {
-        logf("OnAIChatToggle: win->hwndAiChatBox is null\n");
-        return;
+        CreateAIChatPanel(win);
+        if (!win->hwndAiChatBox) return;
     }
     WindowTab* tab = win->CurrentTab();
     if (!tab) {
@@ -1507,8 +1635,31 @@ void OnAIChatToggle(MainWindow* win, int providerId) {
         // if the webview was recreated (provider change), its navigationCompleted
         // callback replays the chat once the new page has loaded
         OnAIChatTabChanged(win);
+        if (!p->IsInstalled())
+            WebViewAddError(win, fmt("%s was not found. Choose Auto, another backend, or Setup.", p->name));
     }
     ScheduleUiUpdate(win);
+}
+
+void OnPaperChat(MainWindow* win) {
+    int next = PreferredChatBackend();
+    if (win->uiState.aiChatVisible && !PaperMapHwnd(win) && !ResearchBrowserHwnd(win)) next = win->aiChatProvider;
+    OnAIChatToggle(win, next);
+}
+
+void ShowPaperChat(MainWindow* win) {
+    if (win->uiState.aiChatVisible && !PaperMapHwnd(win) && !ResearchBrowserHwnd(win)) return;
+    WindowTab* tab = win->CurrentTab();
+    if (!tab) return;
+    AIChatSetTabPanelOpen(tab, AIChatBackend::None);
+    OnPaperChat(win);
+}
+
+void SelectChatBackend(MainWindow* win, int providerId) {
+    if (providerId < 0 || providerId >= kAIChatProviderCount) return;
+    str::ReplaceWithCopy(&gSettings->aiChatDefaultBackend, Str(kChatBackends[providerId]));
+    ScheduleSaveSettings();
+    OnAIChatToggle(win, providerId);
 }
 
 // call when switching tabs to update session context
@@ -1562,6 +1713,26 @@ void OnAIChatTabChanged(MainWindow* win) {
 
 TempStr TestChatPaperTemp(MainWindow* win, Str action, Str text) {
     if (!gForTesting) return str::DupTemp(StrL("testing only"));
+    if (str::Eq(action, StrL("backend")))
+        return fmt("provider=%d default=%s visible=%d", win->aiChatProvider, gSettings->aiChatDefaultBackend,
+                   win->uiState.aiChatVisible);
+    if (str::Eq(action, StrL("send")) || str::Eq(action, StrL("send-button"))) {
+        HwndSetText(win->aiChatInput->hwnd, text);
+        if (str::Eq(action, StrL("send-button")))
+            win->aiChatSendBtn->Click();
+        else
+            SendAIChatMessage(win);
+    }
+    if (str::Eq(action, StrL("quota"))) {
+        auto* state = GetTabState(win->CurrentTab(), win->aiChatProvider);
+        if (state) {
+            auto* tab = win->CurrentTab();
+            str::ReplaceWithCopy(&state->question, text);
+            state->triedMask = 1 << win->aiChatProvider;
+            state->retryable = true;
+            OnAIChatFinished(win, CurrentProvider(win), state, true);
+        }
+    }
     AIChatTabState* st = GetTabState(win->CurrentTab(), win->aiChatProvider);
     if (!st) return str::DupTemp(StrL("NO STATE"));
     static u64 oldRequest = 0;
@@ -1640,11 +1811,14 @@ void DestroyAIChatPanel(MainWindow* win) {
     win->aiChatWebViewSlot = nullptr;
     win->aiChatLabel = nullptr;
     win->aiChatSessionCombo = nullptr;
+    win->aiChatProviderCombo = nullptr;
+    win->aiChatSetupBtn = nullptr;
     win->aiChatModelCombo = nullptr;
     win->aiChatOptionCombo = nullptr;
     win->aiChatCheckbox = nullptr;
     win->aiChatStopBtn = nullptr;
     win->aiChatClearBtn = nullptr;
+    win->aiChatSendBtn = nullptr;
     win->aiChatInput = nullptr;
 
     if (win->aiChatSplitter) {

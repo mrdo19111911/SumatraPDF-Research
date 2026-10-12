@@ -5,15 +5,16 @@ This is an independent fork; custom release numbers are not upstream SumatraPDF 
 
 [Download Windows x64](https://github.com/mrdo19111911/SumatraPDF-Research/releases/latest)
 
-Choose `-install.exe` for the Windows installer or `.zip` for portable use. Close the running reader before upgrading. The installer registers as `SumatraPDFResearch` (own install directory, settings, file associations and Explorer preview/search handlers), so it can coexist with upstream SumatraPDF. Releases up to v4.7.4 installed under upstream's identity; uninstall those first. The installer is unsigned.
+Choose `-install.exe` for the Windows installer or `.zip` for portable use. Close the running reader before upgrading. The installer updates the existing `SumatraPDFResearch` installation and retains its directory and settings. Releases up to v4.7.4 used the separate `SumatraPDF` identity and may remain installed. Windows metadata and Help/About now show the Research version. The installer is unsigned.
 
 ## Read and explore
 
 - AUTO reading adjusts single/facing layout and content zoom to the available PDF pane.
 - Paper KG appears beside one PDF page. Hover shows original context; click navigates and highlights a verified source passage. Closing KG restores AUTO.
-- Chat state and KG are separate for each document tab. AI actions share a toolbar group.
+- Chat state and KG are separate for each document tab. Chat offers Auto detection and a provider selector; Auto can retry with another installed CLI after a quota or login error.
 - Research tools explain selections, build symbol indexes, compare papers or versions, and discuss figures with page references.
-- Dark theme, adaptive top/right toolbar, an embedded research browser and expanded Markdown rendering.
+- One circular floating launcher opens labeled action cards without reserving toolbar space. Hold Tools or blank toolbox space to drag; a short click opens or closes it. Category tabs show one group at a time. The toolbox scrolls in smaller windows. Dark theme, an embedded research browser and expanded Markdown rendering are included. The legacy top/right toolbar remains configurable.
+- Fluent-style light/dark surfaces unify document tabs, tools, chat, KG and themed dialog buttons. Tools uses a category rail beside the action grid; Chat/KG/Related share the research pane, and chat has a Send button.
 - Native port of GROBID's CRF models (no Java, no server) reads each paper's title, authors, sections, figures, equations and references. KG and Ask receive this outline next to the page text; Connected Papers searches use the parsed title when the PDF metadata is unusable.
 - Reference collection splits the bibliography with GROBID, searches arXiv, Crossref, Sci-Hub (DOI, or the title when there is no DOI) and Google, names files after the paper title and produces an HTML report of attempts and failures.
 - Vietnamese narration can use locally downloaded speech tools. Drive and Zalo integrations need the user's own setup.

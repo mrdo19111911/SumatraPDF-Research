@@ -13,7 +13,7 @@ import {
 } from "./winapi";
 
 const AI = [
-  "CmdAIChatWithClaudeCode",
+  "CmdPaperChat",
   "CmdPaperMap",
   "CmdClearAIChat",
   "CmdResearchAsk",
@@ -49,7 +49,7 @@ export async function testit(): Promise<void> {
   for (const orientation of ["top", "right"]) {
     writeFileSync(
       join(root, "SumatraPDF-settings.txt"),
-      `CheckForUpdates = false\nUiLanguage = en\nTheme = Light\nToolbarPosition = ${orientation}\n`,
+      `CheckForUpdates = false\nUiLanguage = en\nTheme = Light\nResearchFloatingTools = false\nToolbarPosition = ${orientation}\n`,
     );
     await withControlledSumatra(
       EXE,

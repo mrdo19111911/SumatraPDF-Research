@@ -25,6 +25,11 @@ void DestroyAIChatPanel(MainWindow* win);
 void ShutdownAIChatForMainWindow(MainWindow* win);
 
 void OnAIChatToggle(MainWindow* win, int providerId);
+void OnPaperChat(MainWindow* win);
+void ShowPaperChat(MainWindow* win);
+void HidePaperChat(MainWindow* win);
+void SelectChatBackend(MainWindow* win, int providerId);
+bool AIChatCanFallback(Str error);
 bool AIChatConfigureClaude(MainWindow* win);
 void OnAIChatTabChanged(MainWindow* win);
 void ClearAIChat(MainWindow* win);

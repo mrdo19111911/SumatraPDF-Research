@@ -363,6 +363,7 @@ const commandsRaw = [
     "CmdArxivSearch", "Search arXiv Papers...",
     "CmdCollectPapers", "Collect All Referenced Papers...",
     "CmdPaperMap", "Paper Knowledge Map",
+    "CmdPaperChat", "Chat With This Paper",
 ];
 
 // removed slots are dropped: nothing outside the generators should see them

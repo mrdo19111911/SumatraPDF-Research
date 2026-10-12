@@ -3162,6 +3162,7 @@ void FrameSyncSplitters(MainWindow* win) {
     if (win->captionLayout) {
         CollectVirtCtrls(win->captionLayout, tops);
     }
+    if (win->researchTabs) CollectVirtCtrls(win->researchTabs, tops);
     VirtSplitter* all[] = {win->sidebarSplitter, win->sidebarPanelsSplitter, win->aiChatSplitter};
     for (VirtSplitter* s : all) {
         if (s) {
@@ -3295,7 +3296,8 @@ static void CreateFrameLayout(MainWindow* win) {
     row->AddChild(win->sidebarSplitter);
     row->AddChild(content, 1);
     row->AddChild(win->aiChatSplitter);
-    row->AddChild(win->aiChatSlot);
+    win->researchPane = NewResearchPane(win);
+    row->AddChild(win->researchPane);
     win->frameLayout = row;
 
     auto* chrome = new VBox();
@@ -8153,6 +8155,13 @@ static bool RelayoutFrame(MainWindow* win, bool updateToolbars, int sidebarDx) {
     SetVis(win->sidebarSplitter, sidebarVisible);
     SetVis(win->aiChatSplitter, aiChatVisible);
     SetVis(win->aiChatSlot, aiChatVisible);
+    SetVis(win->researchPane, aiChatVisible);
+    SetVis(win->researchTabs, aiChatVisible);
+    for (int i = 0; i < win->researchTabs->LayoutChildCount(); i++) {
+        auto* button = win->researchTabs->LayoutChildAt(i);
+        SetVis(button, aiChatVisible);
+        if (!aiChatVisible) button->SetBounds({});
+    }
 
     win->sidebarTopSlot->dx = sidebarDxApplied;
     win->sidebarTopSlot->dy = tocDy;
@@ -12438,7 +12447,10 @@ static LRESULT FrameOnCommand(MainWindow* win, HWND hwnd, UINT msg, WPARAM wp, L
 
         case CmdAIChatWithClaudeCode:
             logf("CmdAIChatWithClaudeCode dispatched\n");
-            OnAIChatToggle(win, (int)AIChatBackend::Claude);
+            SelectChatBackend(win, (int)AIChatBackend::Claude);
+            break;
+        case CmdPaperChat:
+            OnPaperChat(win);
             break;
         case CmdClearAIChat:
             ClearAIChat(win);
@@ -12486,17 +12498,17 @@ static LRESULT FrameOnCommand(MainWindow* win, HWND hwnd, UINT msg, WPARAM wp, L
 
         case CmdAIChatWithGrokBuild:
             logf("CmdAIChatWithGrokBuild dispatched\n");
-            OnAIChatToggle(win, (int)AIChatBackend::Grok);
+            SelectChatBackend(win, (int)AIChatBackend::Grok);
             break;
 
         case CmdAIChatWithOpenAICodex:
             logf("CmdAIChatWithOpenAICodex dispatched\n");
-            OnAIChatToggle(win, (int)AIChatBackend::Codex);
+            SelectChatBackend(win, (int)AIChatBackend::Codex);
             break;
 
         case CmdAIChatWithAntiGravity:
             logf("CmdAIChatWithAntiGravity dispatched\n");
-            OnAIChatToggle(win, (int)AIChatBackend::AntiGravity);
+            SelectChatBackend(win, (int)AIChatBackend::AntiGravity);
             break;
 
         case CmdClearHistory:

@@ -16,6 +16,7 @@ struct PlatformFont;
 struct VirtCtrl;
 struct VirtText;
 struct VirtHost;
+struct ScrollBox;
 struct VirtIconButton;
 struct Edit;
 struct ILayout;
@@ -114,6 +115,8 @@ TempStr AnnotColorPopupStateTemp();
 // covered by other HWNDs. They need the right size
 constexpr int PageInfoId = (int)CmdLast + 16;
 constexpr int WarningMsgId = (int)CmdLast + 17;
+constexpr int AiToolsId = (int)CmdLast + 18;
+constexpr int FloatingGroupId = (int)CmdLast + 19;
 
 // the overlay toolbar's delayed-hide timer, on the toolbar's own host
 constexpr int kHideOverlayToolbarTimerId = 0x101;
@@ -145,7 +148,26 @@ struct ToolbarGroupState {
     ILayout* layout = nullptr;
 };
 
+enum class FloatingDrag {
+    Idle,
+    Armed,
+    Moving
+};
+
 struct ToolbarVirt {
+    VirtCtrl* aiHeader = nullptr;
+    VirtCtrl* floatingAi = nullptr;
+    VirtCtrl* floatingGrip = nullptr;
+    VirtCtrl* floatingToggle = nullptr;
+    VirtCtrl* floatingTitle = nullptr;
+    Vec<VirtCtrl*> floatingGroups;
+    ScrollBox* floatingScroll = nullptr;
+    bool floatingExpanded = false;
+    int floatingSectionId = AiToolsId;
+    FloatingDrag floatingDrag = FloatingDrag::Idle;
+    VirtCtrl* floatingDragButton = nullptr;
+    Point floatingGrab;
+    Point floatingStart;
     // the toolbar's window; owns the layout tree and the virtual controls
     VirtHost* host = nullptr;
     Vec<VirtCtrl*> items; // not owned; the layout owns them

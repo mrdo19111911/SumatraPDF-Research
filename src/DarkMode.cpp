@@ -126,21 +126,21 @@ void ThemeApplyPlatformColors() {
     Color link = ThemeWindowLinkColor();
     Color ctlBg = ThemeWindowControlBackgroundColor();
     Color edge = ThemeEdgeColor();
-    Color hotEdge = ThemeHotEdgeColor();
 
     gColsText[kColText] = text;
     gColsLink[kColText] = link;
 
     gColsBtn[kColBtnText] = text;
-    gColsBtn[kColBtnBg] = AccentColor(ctlBg, 14);
-    gColsBtn[kColBtnBgHover] = AccentColor(ctlBg, 28);
+    gColsBtn[kColBtnBg] = ctlBg;
+    gColsBtn[kColBtnBgHover] = ThemeHotBackgroundColor();
     gColsBtn[kColBtnBorder] = edge;
     gColsBtn[kColBtnTextDisabled] = disabled;
 
-    gColsBtnDefault[kColBtnText] = text;
-    gColsBtnDefault[kColBtnBg] = AccentColor(ctlBg, 26);
-    gColsBtnDefault[kColBtnBgHover] = AccentColor(ctlBg, 40);
-    gColsBtnDefault[kColBtnBorder] = hotEdge;
+    Color accent = ThemeUsesHighContrastColors() ? SysHighlightBgColor() : MkRgb(15, 108, 189);
+    gColsBtnDefault[kColBtnText] = ThemeUsesHighContrastColors() ? SysHighlightTextColor() : kColWhite;
+    gColsBtnDefault[kColBtnBg] = accent;
+    gColsBtnDefault[kColBtnBgHover] = AccentColor(accent, 10);
+    gColsBtnDefault[kColBtnBorder] = accent;
     gColsBtnDefault[kColBtnTextDisabled] = disabled;
 
     gColsIconBtn[kColIconBtnBgHover] = AccentColor(ctlBg, 20);

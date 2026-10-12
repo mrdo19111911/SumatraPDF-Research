@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { ControlCommand, withControlledSumatra } from "./control";
 import { EXE, assemblePdf, runStandalone, tmpPath, loadPng, pngPixel } from "./util";
-import { waitForFrame } from "./win-automation";
+import { clickAt, waitForFrame } from "./win-automation";
 import { sleep, setProcessDpiAware, waitForWindowIdle, captureWindowToPng, moveWindow } from "./winapi";
 
 export async function testit(): Promise<void> {
@@ -82,6 +82,20 @@ export async function testit(): Promise<void> {
         return data.nodes?.length === 3;
       }, "KG generation and WebView load");
       const opened = await native("map-state");
+      const selectPane = async (name: string) => {
+        const tabs = await native("pane-tabs");
+        const r = new RegExp(`tab=${name} .*rect=([\\d,-]+)`).exec(tabs)![1]!.split(",").map(Number);
+        await clickAt(frame, (r[0]! + r[2]!) / 2, (r[1]! + r[3]!) / 2);
+        await waitForWindowIdle(frame);
+      };
+      await selectPane("KG");
+      if (!(await native("map-state")).includes("open=1")) throw Error("Selected KG tab unexpectedly closes the pane");
+      await selectPane("Chat");
+      if ((await native("map-state")).includes("open=1")) throw Error("Chat tab did not replace KG");
+      const chat = String((await client.request(ControlCommand.TestChatPaper, ["backend"]))[1]);
+      if (!chat.includes("visible=1")) throw Error("Chat tab did not open chat");
+      await selectPane("KG");
+      if (!(await native("map-state")).includes("open=1")) throw Error("KG tab lost the existing map");
       if (data.images !== 0) throw Error("KG rendered provider labels as executable markup");
       if (!opened.includes("open=1") || !opened.includes("auto=1")) throw Error(`KG not docked with AUTO: ${opened}`);
       const width = (s: string) => Number(/canvas=(\d+)x/.exec(s)![1]);

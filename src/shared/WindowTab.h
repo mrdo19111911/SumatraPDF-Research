@@ -56,6 +56,9 @@ struct AIChatTabState {
     str::Builder chatLog;
     void* process = nullptr;
     u64 requestId = 0;
+    bool retryable = false;
+    Str question;
+    int triedMask = 0;
 };
 
 /* Data related to a single document loaded into a tab/window */
